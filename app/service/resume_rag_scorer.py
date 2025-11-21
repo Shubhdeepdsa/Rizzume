@@ -1,29 +1,23 @@
 
 import json
-from typing import List, Dict, Any, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
-from pydantic import ValidationError
 
+from app.config import get_settings
+from app.errors import ValidationAppError
 from app.helper.prompt_builder import build_rag_question_scoring_user_prompt
 from app.schemas.jd_questions_schema import JDQuestions
-from app.schemas.rag_scoring import (
-    RetrievedChunk,
-    ScoredQuestion,
-    ResumeRagResult,
-)
-from app.service.chunking import chunk_text, TextChunk
-from app.service.embedding_service import embed_texts, cosine_sim_matrix
+from app.schemas.rag_scoring import RetrievedChunk, ResumeRagResult, ScoredQuestion
+from app.service.chunking import TextChunk, chunk_text
+from app.service.embedding_service import cosine_sim_matrix, embed_texts
 from app.service.ollama_client import call_ollama_chat
-from app.prompts.jd_prompts import (
-    RAG_QUESTION_SCORING_SYSTEM_PROMPT,
-)
+from app.prompts.jd_prompts import RAG_QUESTION_SCORING_SYSTEM_PROMPT
 
 
 def _build_resume_index(resume_text: str) -> Tuple[List[TextChunk], np.ndarray]:
     """
     Chunk the resume and create an embedding index.
-    Returns (chunks, embeddings).
     """
     chunks = chunk_text(resume_text, max_chars=700, overlap=150)
     chunk_texts = [c.text for c in chunks]
@@ -161,6 +155,14 @@ def score_resume_with_rag(
     - Call LLM to answer + score each question.
     - Return a ResumeRagResult with full audit trail.
     """
+    settings = get_settings()
+
+    if len(resume_text) > settings.max_resume_chars:
+        raise ValidationAppError(
+            f"Resume text is too long (>{settings.max_resume_chars} characters) "
+            "for processing."
+        )
+
     chunks, chunk_embeddings = _build_resume_index(resume_text)
 
     all_scored: list[ScoredQuestion] = []
@@ -178,10 +180,12 @@ def score_resume_with_rag(
             )
             all_scored.append(scored)
 
-    process_category("education", jd_questions.education)
-    process_category("experience", jd_questions.experience)
-    process_category("technical_skills", jd_questions.technical_skills)
-    process_category("soft_skills", jd_questions.soft_skills)
+    max_q = settings.max_questions_per_category
+
+    process_category("education", jd_questions.education[:max_q])
+    process_category("experience", jd_questions.experience[:max_q])
+    process_category("technical_skills", jd_questions.technical_skills[:max_q])
+    process_category("soft_skills", jd_questions.soft_skills[:max_q])
 
     if all_scored:
         avg_score = sum(q.score for q in all_scored) / len(all_scored)

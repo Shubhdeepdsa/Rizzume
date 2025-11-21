@@ -1,15 +1,12 @@
-# app/service/jd_question_generator.py
-
 import json
-from typing import Dict, Any
+from typing import Any, Dict
 
 from pydantic import ValidationError
 
+from app.config import get_settings
+from app.errors import ValidationAppError
 from app.helper.prompt_builder import build_jd_question_user_prompt
-from app.prompts.jd_prompts import (
-    JD_QUESTION_SYSTEM_PROMPT,
-    JD_QUESTION_THIRD_PERSON_SYSTEM_PROMPT,
-)
+from app.prompts.jd_prompts import JD_QUESTION_THIRD_PERSON_SYSTEM_PROMPT
 from app.schemas.jd_questions_schema import JDQuestions
 from app.service.ollama_client import call_ollama_chat
 
@@ -69,6 +66,13 @@ def generate_jd_questions(jd_text: str) -> JDQuestions:
       - Extracts JSON content
       - Validates into JDQuestions
     """
+
+    settings = get_settings()
+
+    if len(jd_text) > settings.max_jd_chars:
+        raise ValidationAppError(
+            f"JD text is too long (>{settings.max_jd_chars} characters) for processing."
+        )
 
     messages = [
         {"role": "system", "content": JD_QUESTION_THIRD_PERSON_SYSTEM_PROMPT},

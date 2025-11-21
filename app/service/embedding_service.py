@@ -1,23 +1,33 @@
-import os
 from typing import List
+
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from dotenv import load_dotenv
 
-load_dotenv()
+from app.config import get_settings
 
-_EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME")
+_model: SentenceTransformer | None = None
 
-_model = SentenceTransformer(_EMBED_MODEL_NAME)
+
+def _get_model() -> SentenceTransformer:
+    """
+    Lazily construct and cache the SentenceTransformer model.
+
+    This avoids doing heavy model loading at import time and ensures we fail
+    fast with a clear configuration error if the model name is not set.
+    """
+    global _model
+    if _model is None:
+        settings = get_settings()
+        _model = SentenceTransformer(settings.embed_model_name)
+    return _model
 
 
 def embed_texts(texts: List[str]) -> np.ndarray:
-    """
-    Return a 2D numpy array of shape (len(texts), dim).
-    """
+    """Return a 2D numpy array of shape (len(texts), dim)."""
     if not texts:
         return np.zeros((0, 768), dtype="float32")  # safe default
-    return _model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
+    model = _get_model()
+    return model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
 
 
 def cosine_sim_matrix(a: np.ndarray, b: np.ndarray) -> np.ndarray:

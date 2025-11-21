@@ -1,7 +1,10 @@
 
 import io
-from fastapi import HTTPException, UploadFile, status
+
 import pdfplumber
+from fastapi import HTTPException, UploadFile, status
+
+from app.config import get_settings
 
 
 async def _read_text_from_upload(file: UploadFile) -> str:
@@ -10,12 +13,22 @@ async def _read_text_from_upload(file: UploadFile) -> str:
     - If PDF -> use pdfplumber
     - Else -> treat as a text-like file and decode as UTF-8
     """
+    settings = get_settings()
     content = await file.read()
 
     if not content:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Uploaded file '{file.filename}' is empty.",
+        )
+
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"Uploaded file '{file.filename}' is too large "
+                f"(>{settings.max_upload_bytes} bytes)."
+            ),
         )
 
     # crude pdf detection
@@ -27,7 +40,8 @@ async def _read_text_from_upload(file: UploadFile) -> str:
     if is_pdf:
         try:
             with pdfplumber.open(io.BytesIO(content)) as pdf:
-                pages_text = [page.extract_text() or "" for page in pdf.pages]
+                pages = pdf.pages[: settings.max_pdf_pages]
+                pages_text = [page.extract_text() or "" for page in pages]
             text = "\n".join(pages_text).strip()
         except Exception as e:
             raise HTTPException(

@@ -1,13 +1,15 @@
-import os
+import logging
+from typing import Any, Dict, List
+
 import requests
-from typing import List, Dict, Any
 from dotenv import load_dotenv
+
+from app.config import get_settings
+from app.errors import LLMBackendError
 
 load_dotenv()
 
-
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_DEFAULT_MODEL = os.getenv("OLLAMA_DEFAULT_MODEL", "qwen3:1.7b")
+logger = logging.getLogger(__name__)
 
 
 def call_ollama_chat(
@@ -24,13 +26,11 @@ def call_ollama_chat(
 
     Returns the parsed JSON response from Ollama.
 
-    NOTE:
-    - stream=False: we assume non-streaming for now to keep it simple.
-    - If you later want streaming, we can extend this.
+    NOTE: stream=False is assumed for now to keep things simple.
     """
-    used_model = model or OLLAMA_DEFAULT_MODEL
-    print(used_model, OLLAMA_DEFAULT_MODEL)
-    url = f"{OLLAMA_BASE_URL}/api/chat"
+    settings = get_settings()
+    used_model = model or settings.ollama_default_model
+    url = f"{settings.ollama_base_url}/api/chat"
 
     payload: Dict[str, Any] = {
         "model": used_model,
@@ -40,8 +40,14 @@ def call_ollama_chat(
 
     payload.update(extra_kwargs)
 
-    resp = requests.post(url, json=payload, timeout=120)
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        resp = requests.post(url, json=payload, timeout=120)
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as exc:
+        logger.exception(
+            "Error while calling Ollama at %s with model %s", url, used_model
+        )
+        raise LLMBackendError("Failed to call LLM backend.") from exc
 
     return data
