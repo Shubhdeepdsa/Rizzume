@@ -1,6 +1,9 @@
 import os
 import requests
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -26,7 +29,7 @@ def call_ollama_chat(
     - If you later want streaming, we can extend this.
     """
     used_model = model or OLLAMA_DEFAULT_MODEL
-
+    print(used_model, OLLAMA_DEFAULT_MODEL)
     url = f"{OLLAMA_BASE_URL}/api/chat"
 
     payload: Dict[str, Any] = {

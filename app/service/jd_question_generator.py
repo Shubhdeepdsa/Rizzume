@@ -8,8 +8,9 @@ from pydantic import ValidationError
 from app.helper.prompt_builder import build_jd_question_user_prompt
 from app.prompts.jd_prompts import (
     JD_QUESTION_SYSTEM_PROMPT,
+    JD_QUESTION_THIRD_PERSON_SYSTEM_PROMPT,
 )
-from app.schema.jd_questions_schema import JDQuestions
+from app.schemas.jd_questions_schema import JDQuestions
 from app.service.ollama_client import call_ollama_chat
 
 
@@ -70,7 +71,7 @@ def generate_jd_questions(jd_text: str) -> JDQuestions:
     """
 
     messages = [
-        {"role": "system", "content": JD_QUESTION_SYSTEM_PROMPT},
+        {"role": "system", "content": JD_QUESTION_THIRD_PERSON_SYSTEM_PROMPT},
         {"role": "user", "content": build_jd_question_user_prompt(jd_text)},
     ]
 
@@ -83,12 +84,16 @@ def generate_jd_questions(jd_text: str) -> JDQuestions:
         raw_json = _parse_json_from_content(content)
     except json.JSONDecodeError as e:
         # You should log content somewhere, but for now raise.
-        raise ValueError(f"Failed to parse Ollama content as JSON: {e}\nRaw content: {content[:500]}")
+        raise ValueError(
+            f"Failed to parse Ollama content as JSON: {e}\nRaw content: {content[:500]}"
+        )
 
     try:
         questions = JDQuestions.model_validate(raw_json)
     except ValidationError as e:
         # Again, log raw_json in real system
-        raise ValueError(f"Response does not match JDQuestions schema: {e}\nRaw JSON: {raw_json}")
+        raise ValueError(
+            f"Response does not match JDQuestions schema: {e}\nRaw JSON: {raw_json}"
+        )
 
     return questions

@@ -1,7 +1,7 @@
 from typing import Optional
 from fastapi import File, Form, HTTPException, UploadFile, status
 from app.helper.text_extracter import _read_text_from_upload
-from app.schema.score_input_schema import NormalizedScoreInput
+from app.schemas.score_input_schema import NormalizedScoreInput
 from app.validator.scoring_validators import _ensure_exactly_one
 
 
