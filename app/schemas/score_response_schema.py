@@ -9,6 +9,16 @@ class ScoreResponse(BaseModel):
     result: ResumeRagResult
     jd_text_length: int
     resume_text_length: int
+    jd_token_estimate: int
+    resume_token_estimate: int
+    jd_text: str
+    resume_text: str
     questions: JDQuestions
     message: str
 
+
+class TokenEstimateResponse(BaseModel):
+    jd_text_length: int
+    resume_text_length: int
+    jd_token_estimate: int
+    resume_token_estimate: int
