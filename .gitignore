@@ -2,3 +2,6 @@ vevn/
 __pycache__/
 *.pyc
 frontend/package-lock.json
+rizzume-web-app/node_modules/.package-lock.json
+rizzume-web-app/node_modules/
+rizzume-web-app/.next/

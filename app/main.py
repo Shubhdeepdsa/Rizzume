@@ -2,6 +2,7 @@ import logging
 import time
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.metrics import record_request, render_metrics_text
 from app.routes.scoring_route import router
@@ -10,6 +11,17 @@ from app.routes.scoring_route import router
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        # add "http://localhost:4173" if you use `npm run preview`
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(router)
 
 
