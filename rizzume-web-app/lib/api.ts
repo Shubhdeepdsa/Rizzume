@@ -1,9 +1,9 @@
 // API integration layer for Rizzume
 
 export interface RetrievedChunk {
-  chunk_id: number
-  start: number
-  end: number
+  chunk_id: number | undefined
+  start_char: number
+  end_char: number
   similarity: number
   text: string
 }
@@ -35,6 +35,7 @@ export interface ScoreResponse {
   result: ScoreResult
   jd_text_length: number
   resume_text_length: number
+  resume_text: string
   groupedQuestions?: {
     education: { question: string }[]
     experience: { question: string }[]

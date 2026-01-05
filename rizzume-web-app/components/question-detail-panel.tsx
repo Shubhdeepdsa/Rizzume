@@ -3,13 +3,15 @@
 import { useState } from "react"
 import type { QuestionItem } from "@/lib/api"
 import { Card } from "@/components/ui/card"
+import { ResumeViewer } from "./resume-viewer"
 
 interface QuestionDetailPanelProps {
   question: QuestionItem
+  resumeText?: string
 }
 
-export function QuestionDetailPanel({ question }: QuestionDetailPanelProps) {
-  const [activeTab, setActiveTab] = useState<"reasoning" | "evidence">("reasoning")
+export function QuestionDetailPanel({ question, resumeText }: QuestionDetailPanelProps) {
+  const [activeTab, setActiveTab] = useState<"reasoning" | "evidence" | "resume">("reasoning")
 
   const getAnswerColor = (answer: string) => {
     if (answer.toLowerCase().startsWith("yes")) {
@@ -40,9 +42,8 @@ export function QuestionDetailPanel({ question }: QuestionDetailPanelProps) {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 border-b border-border/50">
-        {(["reasoning", "evidence"] as const).map((tab) => (
+        {(["reasoning", "evidence", "resume"] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -52,7 +53,7 @@ export function QuestionDetailPanel({ question }: QuestionDetailPanelProps) {
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            {tab === "reasoning" ? "Reasoning" : "Evidence from resume"}
+            {tab === "reasoning" ? "Reasoning" : tab === "evidence" ? "Evidence from resume" : "Resume highlights"}
           </button>
         ))}
       </div>
@@ -68,7 +69,7 @@ export function QuestionDetailPanel({ question }: QuestionDetailPanelProps) {
               Evidence coverage: {question.evidence_chars.toLocaleString()} characters
             </div>
           </>
-        ) : (
+        ) : activeTab === "evidence" ? (
           <div className="space-y-3">
             {question.retrieved_chunks.length > 0 ? (
               question.retrieved_chunks.map((chunk, idx) => (
@@ -89,6 +90,12 @@ export function QuestionDetailPanel({ question }: QuestionDetailPanelProps) {
               </Card>
             )}
           </div>
+        ) : resumeText ? (
+          <ResumeViewer resumeText={resumeText} chunks={question.retrieved_chunks} />
+        ) : (
+          <Card className="p-6 border border-border/50 bg-card/50">
+            <p className="text-sm text-muted-foreground text-center">Resume text not available</p>
+          </Card>
         )}
       </div>
     </div>

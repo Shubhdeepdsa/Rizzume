@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next"
 
 import "@/app/globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
+
 import { Geist, Geist_Mono, Geist as V0_Font_Geist, Geist_Mono as V0_Font_Geist_Mono, Source_Serif_4 as V0_Font_Source_Serif_4 } from 'next/font/google'
 
 // Initialize fonts
@@ -17,7 +18,6 @@ export const metadata: Metadata = {
   title: "Rizzume - Resume Analysis",
   description:
     "Resume analysis powered by you. Upload your resume and JD, and get transparent, evidence-backed insights.",
-    generator: 'v0.app'
 }
 
 export const viewport: Viewport = {

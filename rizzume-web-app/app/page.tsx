@@ -60,7 +60,9 @@ export default function App() {
 
       {appState.step === "loading" && <LoadingState />}
 
-      {appState.step === "analysis" && appState.scoreResult && <AnalysisLayout result={appState.scoreResult.result} />}
+      {appState.step === "analysis" && appState.scoreResult && (
+        <AnalysisLayout result={appState.scoreResult.result} resumeText={appState.scoreResult.resume_text} />
+      )}
     </div>
   )
 }

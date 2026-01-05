@@ -9,9 +9,10 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 interface AnalysisLayoutProps {
   result: ScoreResult
+  resumeText?: string
 }
 
-export function AnalysisLayout({ result }: AnalysisLayoutProps) {
+export function AnalysisLayout({ result, resumeText }: AnalysisLayoutProps) {
   const [selectedFilter, setSelectedFilter] = useState("all")
   const [selectedQuestionId, setSelectedQuestionId] = useState(0)
 
@@ -111,7 +112,7 @@ export function AnalysisLayout({ result }: AnalysisLayoutProps) {
 
           {/* Right column - Detail view */}
           <div className="lg:col-span-3 max-h-[calc(100vh-200px)] overflow-y-auto">
-            <QuestionDetailPanel question={selectedQuestion} />
+            <QuestionDetailPanel question={selectedQuestion} resumeText={resumeText} />
           </div>
         </div>
       </div>
