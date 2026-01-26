@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+venv/
+vevn/
+__pycache__/
+*.pyc
+
+# Build outputs
+.next/
+dist/
+build/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Docker files (don't include in context)
+Dockerfile*
+docker-compose*.yml
+
+# Environment files (sensitive)
+.env.local
+.env.production
+
+# Documentation and tests
+*.md
+docs/
+tests/
+
+# Misc
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

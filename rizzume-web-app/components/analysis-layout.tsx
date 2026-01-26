@@ -22,11 +22,13 @@ export function AnalysisLayout({ result, resumeText }: AnalysisLayoutProps) {
       experience: result.questions.filter((q) => q.category === "experience").length,
       technical_skills: result.questions.filter((q) => q.category === "technical_skills").length,
       soft_skills: result.questions.filter((q) => q.category === "soft_skills").length,
+      mandatory: result.questions.filter((q) => q.is_mandatory).length,
     }
   }, [result.questions])
 
   const filteredQuestions = useMemo(() => {
     if (selectedFilter === "all") return result.questions
+    if (selectedFilter === "mandatory") return result.questions.filter((q) => q.is_mandatory)
     return result.questions.filter((q) => q.category === selectedFilter)
   }, [result.questions, selectedFilter])
 

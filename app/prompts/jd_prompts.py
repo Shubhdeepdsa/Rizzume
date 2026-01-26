@@ -5,7 +5,7 @@ Your job is to extract *every explicit and implicit requirement* and turn each r
 
 STRICT RULES:
 
-1. Questions MUST be fully objective and answerable using the candidate’s resume.
+1. Questions MUST be fully objective and answerable using the candidate's resume.
 2. NEVER ask for examples, explanations, descriptions, stories, or how the candidate did something.
    - BAD: "Can you give an example of leading a team?"
    - BAD: "How do you handle confidentiality?"
@@ -16,6 +16,13 @@ STRICT RULES:
 6. Prefer more granular questions over fewer generic ones.
 7. If a category has no relevant requirements, return an empty array.
 8. The question must be phrased so it can be answered from the resume OR in an interview with a yes/no format.
+
+MANDATORY vs OPTIONAL REQUIREMENTS:
+
+For each question, you MUST determine if it is a MANDATORY (dealbreaker) requirement:
+- Set "is_mandatory": true for requirements that use words like: "required", "must have", "mandatory", "essential", "minimum", explicit years of experience requirements, or anything clearly stated as non-negotiable.
+- Set "is_mandatory": false for requirements that use words like: "nice to have", "preferred", "bonus", "ideally", "a plus", or anything clearly optional.
+- When in doubt, if the requirement seems critical to the role's core function, mark it as mandatory.
 
 CATEGORIES (MANDATORY):
 - Education
@@ -28,16 +35,16 @@ Return ONLY valid JSON with this exact structure:
 
 {
   "education": [
-    { "question": "..." }
+    { "question": "...", "is_mandatory": true/false }
   ],
   "experience": [
-    { "question": "..." }
+    { "question": "...", "is_mandatory": true/false }
   ],
   "technical_skills": [
-    { "question": "..." }
+    { "question": "...", "is_mandatory": true/false }
   ],
   "soft_skills": [
-    { "question": "..." }
+    { "question": "...", "is_mandatory": true/false }
   ]
 }
 """.strip()
@@ -57,8 +64,8 @@ PERSPECTIVE:
 
 STRICT RULES:
 
-1. Questions MUST be fully objective and answerable using the candidate’s resume.
-2. NEVER ask for examples, explanations, stories, or “how” the candidate did something.
+1. Questions MUST be fully objective and answerable using the candidate's resume.
+2. NEVER ask for examples, explanations, stories, or "how" the candidate did something.
    - BAD: "Can you give an example of leading a team?"
    - BAD: "How does the candidate handle confidentiality?"
    - GOOD: "Has the candidate led a team before?"
@@ -70,6 +77,13 @@ STRICT RULES:
 6. Use neutral, professional tone.
 7. Prefer more granular questions over fewer generic ones.
 8. If a category has no relevant requirements, return an empty array for that category.
+
+MANDATORY vs OPTIONAL REQUIREMENTS:
+
+For each question, you MUST determine if it is a MANDATORY (dealbreaker) requirement:
+- Set "is_mandatory": true for requirements that use words like: "required", "must have", "mandatory", "essential", "minimum", explicit years of experience requirements, or anything clearly stated as non-negotiable.
+- Set "is_mandatory": false for requirements that use words like: "nice to have", "preferred", "bonus", "ideally", "a plus", or anything clearly optional.
+- When in doubt, if the requirement seems critical to the role's core function, mark it as mandatory.
 
 CATEGORIES (MANDATORY):
 
@@ -84,16 +98,16 @@ Return ONLY valid JSON with this exact structure, and no extra text:
 
 {
   "education": [
-    { "question": "..." }
+    { "question": "...", "is_mandatory": true/false }
   ],
   "experience": [
-    { "question": "..." }
+    { "question": "...", "is_mandatory": true/false }
   ],
   "technical_skills": [
-    { "question": "..." }
+    { "question": "...", "is_mandatory": true/false }
   ],
   "soft_skills": [
-    { "question": "..." }
+    { "question": "...", "is_mandatory": true/false }
   ]
 }
 """

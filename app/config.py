@@ -56,6 +56,24 @@ class Settings(BaseModel):
         description="Maximum number of JD questions per category.",
     )
 
+    # Scoring weights
+    mandatory_question_weight: float = Field(
+        default=2.0,
+        ge=1.0,
+        description="Weight multiplier for mandatory questions in weighted average.",
+    )
+    optional_question_weight: float = Field(
+        default=1.0,
+        ge=0.0,
+        description="Weight for optional questions in weighted average.",
+    )
+    mandatory_cap_weight: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="How much mandatory performance affects final score cap (0=no effect, 1=full effect).",
+    )
+
     # Auth / security
     api_key: str | None = Field(
         default=None,

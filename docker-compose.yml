@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rizzume-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - EMBED_MODEL_NAME=${EMBED_MODEL_NAME:-sentence-transformers/all-mpnet-base-v2}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_DEFAULT_MODEL=${OLLAMA_DEFAULT_MODEL:-qwen3:1.7b}
+    volumes:
+      # Mount for development (optional - remove for production)
+      - ./app:/app/app:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./rizzume-web-app
+      dockerfile: Dockerfile
+    container_name: rizzume-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Development mode - runs both services with hot reload
+  backend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: rizzume-backend-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - EMBED_MODEL_NAME=${EMBED_MODEL_NAME:-sentence-transformers/all-mpnet-base-v2}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_DEFAULT_MODEL=${OLLAMA_DEFAULT_MODEL:-qwen3:1.7b}
+    volumes:
+      - ./app:/app/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    profiles:
+      - dev
+
+  frontend-dev:
+    image: node:20-alpine
+    container_name: rizzume-frontend-dev
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    volumes:
+      - ./rizzume-web-app:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev"
+    profiles:
+      - dev
+
+networks:
+  default:
+    name: rizzume-network

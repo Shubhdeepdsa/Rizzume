@@ -14,6 +14,7 @@ class RetrievedChunk(BaseModel):
 class ScoredQuestion(BaseModel):
     category: str               # "education" | "experience" | "technical_skills" | "soft_skills"
     question: str
+    is_mandatory: bool          # Whether this is a dealbreaker requirement
     answer: str
     score: float                # 0–10
     reasoning: str

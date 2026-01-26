@@ -4,6 +4,7 @@ from typing import List, Dict
 
 class Question(BaseModel):
     question: str
+    is_mandatory: bool = False
 
 
 class JDQuestions(BaseModel):

@@ -31,6 +31,11 @@ export function QuestionDetailPanel({ question, resumeText }: QuestionDetailPane
           <h2 className="text-xl font-semibold text-foreground text-balance leading-snug pr-4">{question.question}</h2>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {question.is_mandatory && (
+              <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-red-500 text-white uppercase tracking-wide">
+                Required
+              </span>
+            )}
             <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-muted/50 text-muted-foreground">
               {question.category.replace(/_/g, " ")}
             </span>

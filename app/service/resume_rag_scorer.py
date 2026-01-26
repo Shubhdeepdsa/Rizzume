@@ -88,6 +88,7 @@ def _parse_scoring_json(content: str) -> Dict[str, Any]:
 def _score_single_question_with_rag(
     category: str,
     question: str,
+    is_mandatory: bool,
     retrieved_chunks: List[RetrievedChunk],
 ) -> ScoredQuestion:
     """
@@ -134,12 +135,64 @@ def _score_single_question_with_rag(
     return ScoredQuestion(
         category=category,
         question=question,
+        is_mandatory=is_mandatory,
         answer=answer,
         score=score,
         reasoning=reasoning,
         evidence_chars=evidence_chars,
         retrieved_chunks=retrieved_chunks,
     )
+
+
+def _compute_final_score(
+    scored_questions: List[ScoredQuestion],
+    mandatory_weight: float,
+    optional_weight: float,
+    mandatory_cap_weight: float,
+) -> float:
+    """
+    Compute final score with weighted average and mandatory cap.
+    
+    Formula:
+    1. weighted_avg = Σ(score × weight) / Σ(weight)
+    2. mandatory_ratio = avg_mandatory_score / 10.0
+    3. cap_multiplier = mandatory_cap_weight × mandatory_ratio + (1 - mandatory_cap_weight)
+    4. final_score = weighted_avg × cap_multiplier
+    
+    Returns score in 0-10 range.
+    """
+    if not scored_questions:
+        return 0.0
+
+    # Step 1: Weighted average
+    total_weight = 0.0
+    weighted_sum = 0.0
+    
+    # Also track mandatory scores separately
+    mandatory_scores: List[float] = []
+    
+    for q in scored_questions:
+        weight = mandatory_weight if q.is_mandatory else optional_weight
+        weighted_sum += q.score * weight
+        total_weight += weight
+        
+        if q.is_mandatory:
+            mandatory_scores.append(q.score)
+    
+    weighted_avg = weighted_sum / total_weight if total_weight > 0 else 0.0
+    
+    # Step 2: Apply mandatory cap
+    if mandatory_scores:
+        avg_mandatory = sum(mandatory_scores) / len(mandatory_scores)
+        mandatory_ratio = avg_mandatory / 10.0  # Normalize to 0-1
+        cap_multiplier = mandatory_cap_weight * mandatory_ratio + (1 - mandatory_cap_weight)
+    else:
+        cap_multiplier = 1.0  # No mandatory questions = no penalty
+    
+    final_score = weighted_avg * cap_multiplier
+    
+    # Ensure score stays in 0-10 range
+    return max(0.0, min(10.0, final_score))
 
 
 def score_resume_with_rag(
@@ -170,12 +223,14 @@ def score_resume_with_rag(
     def process_category(category_name: str, questions: list) -> None:
         for q in questions:
             q_text = q.question
+            q_mandatory = q.is_mandatory
             retrieved = _retrieve_chunks_for_question(
                 q_text, chunks, chunk_embeddings, top_k=top_k
             )
             scored = _score_single_question_with_rag(
                 category=category_name,
                 question=q_text,
+                is_mandatory=q_mandatory,
                 retrieved_chunks=retrieved,
             )
             all_scored.append(scored)
@@ -187,10 +242,13 @@ def score_resume_with_rag(
     process_category("technical_skills", jd_questions.technical_skills[:max_q])
     process_category("soft_skills", jd_questions.soft_skills[:max_q])
 
-    if all_scored:
-        avg_score = sum(q.score for q in all_scored) / len(all_scored)
-    else:
-        avg_score = 0.0
+    # Compute final score using weighted average with mandatory cap
+    avg_score = _compute_final_score(
+        all_scored,
+        settings.mandatory_question_weight,
+        settings.optional_question_weight,
+        settings.mandatory_cap_weight,
+    )
 
     return ResumeRagResult(
         questions=all_scored,

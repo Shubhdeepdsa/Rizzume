@@ -11,6 +11,7 @@ export interface RetrievedChunk {
 export interface QuestionItem {
   category: string
   question: string
+  is_mandatory: boolean
   answer: string
   score: number
   reasoning: string

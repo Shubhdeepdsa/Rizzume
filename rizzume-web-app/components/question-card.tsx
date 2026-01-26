@@ -43,6 +43,11 @@ export function QuestionCard({ question, index, isSelected, onClick }: QuestionC
       <div className="space-y-3">
         {/* Header pills */}
         <div className="flex items-center gap-2 flex-wrap">
+          {question.is_mandatory && (
+            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-red-500 text-white uppercase tracking-wide">
+              Required
+            </span>
+          )}
           <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${getCategoryColor(question.category)}`}>
             {question.category.replace(/_/g, " ")}
           </span>
