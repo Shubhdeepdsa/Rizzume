@@ -51,10 +51,21 @@ async def score_resume(
 
     jd_text = payload.jd
     resume_text = payload.resume
+    
+    logger.info("🚀 [Score] Starting resume scoring pipeline...")
+    
     try:
+        logger.info("📝 [Score] Step 1: Extracting JD questions...")
         jd_questions: JDQuestions = await run_in_threadpool(
             generate_jd_questions, jd_text
         )
+        total_questions = (
+            len(jd_questions.education) +
+            len(jd_questions.experience) +
+            len(jd_questions.technical_skills) +
+            len(jd_questions.soft_skills)
+        )
+        logger.info("✅ [Score] Step 1 complete: Extracted %d questions", total_questions)
     except AppError as exc:
         logger.exception("Failed to generate JD questions (AppError)")
         raise app_error_to_http(exc)
@@ -63,11 +74,16 @@ async def score_resume(
         raise HTTPException(status_code=500, detail="Internal server error.")
 
     try:
+        logger.info("🎯 [Score] Step 2: Scoring resume against questions...")
         rag_result: ResumeRagResult = await run_in_threadpool(
             score_resume_with_rag,
             jd_questions,
             resume_text,
             3,
+        )
+        logger.info(
+            "✅ [Score] Step 2 complete: Final score = %.2f/10",
+            rag_result.average_score
         )
     except AppError as exc:
         logger.exception("Failed to score resume with RAG (AppError)")
@@ -78,6 +94,8 @@ async def score_resume(
 
     jd_tokens = estimate_tokens(jd_text)
     resume_tokens = estimate_tokens(resume_text)
+    
+    logger.info("🎉 [Score] Pipeline complete! Score: %.2f/10", rag_result.average_score)
 
     return ScoreResponse(
         success=True,

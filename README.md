@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/FastAPI-0.100+-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js&logoColor=white" alt="Next.js">
   <img src="https://img.shields.io/badge/Ollama-LLM-purple?style=for-the-badge" alt="Ollama">
+  <img src="https://img.shields.io/badge/Groq-LLM-orange?style=for-the-badge" alt="Groq">
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
 </p>
 
@@ -24,7 +25,7 @@
 
 ### 🔑 Key Features
 
-- 🤖 **AI-Powered Analysis** — Uses Ollama LLM for intelligent question generation and scoring
+- 🤖 **AI-Powered Analysis** — Supports Ollama (local) or Groq (cloud) LLMs
 - 📊 **RAG-Based Scoring** — Semantic retrieval ensures relevant resume sections are evaluated
 - 🎯 **Category-Based Breakdown** — Scores across Education, Experience, Technical Skills, and Soft Skills
 - 💡 **Explainable Results** — Each score comes with reasoning and evidence from the resume
@@ -305,14 +306,52 @@ final_resume_scorer/
 
 ## 🔧 Configuration
 
+### General Settings
+
 | Environment Variable | Description | Default |
-|---------------------|-------------|---------|
+|---------------------|-------------|---------:|
 | `EMBED_MODEL_NAME` | SentenceTransformer model name | **Required** |
-| `OLLAMA_BASE_URL` | Ollama server URL | `http://localhost:11434` |
-| `OLLAMA_DEFAULT_MODEL` | LLM model to use | `qwen3:1.7b` |
 | `MAX_JD_CHARS` | Max job description length | `8000` |
 | `MAX_RESUME_CHARS` | Max resume length | `20000` |
 | `MAX_PDF_PAGES` | Max PDF pages to process | `20` |
+
+### 🧠 LLM Provider Configuration
+
+Rizzume supports **multiple LLM providers**. Switch between them via environment variables:
+
+| Environment Variable | Description | Default |
+|---------------------|-------------|---------:|
+| `LLM_PROVIDER` | Provider to use: `ollama` or `groq` | `ollama` |
+
+#### Ollama (Local, Free)
+
+| Variable | Description | Default |
+|----------|-------------|---------:|
+| `OLLAMA_BASE_URL` | Ollama server URL | `http://localhost:11434` |
+| `OLLAMA_DEFAULT_MODEL` | Model name | `qwen3:1.7b` |
+
+```bash
+# .env for Ollama
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_DEFAULT_MODEL=qwen3:1.7b
+```
+
+#### Groq (Cloud, Fast)
+
+| Variable | Description | Default |
+|----------|-------------|---------:|
+| `GROQ_API_KEY` | Your Groq API key | **Required** |
+| `GROQ_MODEL` | Model name | `llama-3.3-70b-versatile` |
+
+```bash
+# .env for Groq
+LLM_PROVIDER=groq
+GROQ_API_KEY=gsk_your_api_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+```
+
+> 💡 **Get your Groq API key** at [console.groq.com/keys](https://console.groq.com/keys) — it's free!
 
 ---
 

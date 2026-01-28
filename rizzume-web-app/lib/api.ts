@@ -48,11 +48,15 @@ export interface ScoreResponse {
 
 export async function estimateTokensApi(payload: {
   jdFile?: File
+  jdText?: string
   resumeFile?: File
+  resumeText?: string
 }): Promise<TokenEstimate> {
   const form = new FormData()
   if (payload.jdFile) form.append("jd_file", payload.jdFile)
+  else if (payload.jdText) form.append("jd_text", payload.jdText)
   if (payload.resumeFile) form.append("resume_file", payload.resumeFile)
+  else if (payload.resumeText) form.append("resume_text", payload.resumeText)
 
   const res = await fetch("http://localhost:8000/score/estimate", {
     method: "POST",
@@ -64,11 +68,15 @@ export async function estimateTokensApi(payload: {
 
 export async function scoreResumeApi(payload: {
   jdFile?: File
+  jdText?: string
   resumeFile?: File
+  resumeText?: string
 }): Promise<ScoreResponse> {
   const form = new FormData()
   if (payload.jdFile) form.append("jd_file", payload.jdFile)
+  else if (payload.jdText) form.append("jd_text", payload.jdText)
   if (payload.resumeFile) form.append("resume_file", payload.resumeFile)
+  else if (payload.resumeText) form.append("resume_text", payload.resumeText)
 
   const res = await fetch("http://localhost:8000/score", {
     method: "POST",

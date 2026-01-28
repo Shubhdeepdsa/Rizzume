@@ -36,14 +36,13 @@ export function DataInputStep({ onAnalyze, isLoading }: DataInputStepProps) {
         try {
           setEstimateLoading(true)
           setError(null)
-          // For now, only file mode is wired up
-          if (resumeMode === "file" && jdMode === "file") {
-            const result = await estimateTokensApi({
-              jdFile: jdFile || undefined,
-              resumeFile: resumeFile || undefined,
-            })
-            setEstimate(result)
-          }
+          const result = await estimateTokensApi({
+            jdFile: jdMode === "file" && jdFile ? jdFile : undefined,
+            jdText: jdMode === "text" && jdText ? jdText : undefined,
+            resumeFile: resumeMode === "file" && resumeFile ? resumeFile : undefined,
+            resumeText: resumeMode === "text" && resumeText ? resumeText : undefined,
+          })
+          setEstimate(result)
         } catch (err) {
           console.error("Token estimate error:", err)
           setError("Failed to estimate tokens. Please try again.")
@@ -54,7 +53,7 @@ export function DataInputStep({ onAnalyze, isLoading }: DataInputStepProps) {
     }, 500)
 
     return () => clearTimeout(timeoutId)
-  }, [hasResumeData, hasJdData, resumeFile, jdFile, resumeMode, jdMode])
+  }, [hasResumeData, hasJdData, resumeFile, jdFile, resumeMode, jdMode, resumeText, jdText])
 
   const handleAnalyze = async () => {
     try {

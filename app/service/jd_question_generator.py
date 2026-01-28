@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Any, Dict
 
 from pydantic import ValidationError
@@ -8,7 +9,9 @@ from app.errors import ValidationAppError
 from app.helper.prompt_builder import build_jd_question_user_prompt
 from app.prompts.jd_prompts import JD_QUESTION_THIRD_PERSON_SYSTEM_PROMPT
 from app.schemas.jd_questions_schema import JDQuestions
-from app.service.ollama_client import call_ollama_chat
+from app.service.llm_client import call_llm_chat
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_content_from_ollama_response(response: Dict[str, Any]) -> str:
@@ -79,8 +82,14 @@ def generate_jd_questions(jd_text: str) -> JDQuestions:
         {"role": "user", "content": build_jd_question_user_prompt(jd_text)},
     ]
 
-    # Low-level call: single place where we talk to Ollama
-    response = call_ollama_chat(messages)
+    # Log which provider is being used for JD question extraction
+    logger.info(
+        "📝 [JD Questions] Extracting questions using LLM provider: '%s' (model: '%s')",
+        settings.llm_provider,
+        settings.groq_model if settings.llm_provider.lower() == "groq" else settings.ollama_default_model
+    )
+
+    response = call_llm_chat(messages)
 
     content = _extract_content_from_ollama_response(response)
 

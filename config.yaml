@@ -1,0 +1,37 @@
+# =============================================================================
+# Application Configuration
+# =============================================================================
+# This file contains all non-secret configuration values.
+# Sensitive values (API keys) should be stored in .env file.
+
+# Ollama Settings
+ollama:
+  base_url: "http://localhost:11434"
+  default_model: "gemma3:12b"
+
+# LLM Provider Configuration
+llm:
+  provider: "groq"  # Options: 'ollama' or 'groq'
+  groq_model: "llama-3.3-70b-versatile"
+
+# Embeddings
+embeddings:
+  model_name: "sentence-transformers/all-mpnet-base-v2"
+
+# Input Limits
+limits:
+  max_jd_chars: 8000
+  max_resume_chars: 20000
+  max_upload_bytes: 5242880  # 5MB
+  max_pdf_pages: 20
+  max_questions_per_category: 25
+
+# Scoring Weights
+scoring:
+  mandatory_question_weight: 2.0
+  optional_question_weight: 1.0
+  mandatory_cap_weight: 0.5
+
+# Rate Limiting
+rate_limiting:
+  max_requests_per_minute: 30

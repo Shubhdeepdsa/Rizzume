@@ -4,11 +4,13 @@ import time
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import get_settings
 from app.metrics import record_request, render_metrics_text
 from app.routes.scoring_route import router
 
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 app.add_middleware(
@@ -23,6 +25,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Log configuration on startup."""
+    settings = get_settings()
+    llm_model = (
+        settings.groq_model 
+        if settings.llm_provider.lower() == "groq" 
+        else settings.ollama_default_model
+    )
+    logger.info("═" * 60)
+    logger.info("🎯 RIZZUME - Configuration Summary")
+    logger.info("═" * 60)
+    logger.info("  📦 LLM Provider: %s", settings.llm_provider.upper())
+    logger.info("  🤖 LLM Model: %s", llm_model)
+    logger.info("  📊 Embedding Model: %s", settings.embed_model_name)
+    if settings.llm_provider.lower() == "ollama":
+        logger.info("  🔗 Ollama URL: %s", settings.ollama_base_url)
+    logger.info("═" * 60)
 
 
 @app.middleware("http")

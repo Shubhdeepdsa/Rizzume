@@ -1,5 +1,5 @@
-
 import json
+import logging
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -11,17 +11,25 @@ from app.schemas.jd_questions_schema import JDQuestions
 from app.schemas.rag_scoring import RetrievedChunk, ResumeRagResult, ScoredQuestion
 from app.service.chunking import TextChunk, chunk_text
 from app.service.embedding_service import cosine_sim_matrix, embed_texts
-from app.service.ollama_client import call_ollama_chat
+from app.service.llm_client import call_llm_chat
 from app.prompts.jd_prompts import RAG_QUESTION_SCORING_SYSTEM_PROMPT
+
+logger = logging.getLogger(__name__)
 
 
 def _build_resume_index(resume_text: str) -> Tuple[List[TextChunk], np.ndarray]:
     """
     Chunk the resume and create an embedding index.
     """
+    settings = get_settings()
+    logger.info(
+        "📊 [Embeddings] Building resume index using model: '%s'",
+        settings.embed_model_name
+    )
     chunks = chunk_text(resume_text, max_chars=700, overlap=150)
     chunk_texts = [c.text for c in chunks]
     embeddings = embed_texts(chunk_texts)
+    logger.info("✅ [Embeddings] Created %d chunks from resume", len(chunks))
     return chunks, embeddings
 
 
@@ -92,7 +100,7 @@ def _score_single_question_with_rag(
     retrieved_chunks: List[RetrievedChunk],
 ) -> ScoredQuestion:
     """
-    Call Ollama with question + evidence, parse JSON, and build ScoredQuestion.
+    Call LLM with question + evidence, parse JSON, and build ScoredQuestion.
     """
     if not retrieved_chunks:
         evidence_text = ""
@@ -111,7 +119,7 @@ def _score_single_question_with_rag(
         },
     ]
 
-    response = call_ollama_chat(messages)
+    response = call_llm_chat(messages)
     content = _extract_content_from_ollama_response(response)
 
     try:
@@ -220,10 +228,29 @@ def score_resume_with_rag(
 
     all_scored: list[ScoredQuestion] = []
 
+    # Log which LLM provider is being used for scoring
+    logger.info(
+        "🎯 [Scoring] Starting resume scoring using LLM provider: '%s' (model: '%s')",
+        settings.llm_provider,
+        settings.groq_model if settings.llm_provider.lower() == "groq" else settings.ollama_default_model
+    )
+
     def process_category(category_name: str, questions: list) -> None:
-        for q in questions:
+        if not questions:
+            logger.info("⏭️  [Scoring] Skipping category '%s' - no questions", category_name)
+            return
+        logger.info(
+            "📋 [Scoring] Processing category '%s' - %d questions",
+            category_name, len(questions)
+        )
+        for idx, q in enumerate(questions, 1):
             q_text = q.question
             q_mandatory = q.is_mandatory
+            mandatory_tag = "[MANDATORY]" if q_mandatory else "[OPTIONAL]"
+            logger.info(
+                "  → [Scoring] %s Question %d/%d %s",
+                category_name, idx, len(questions), mandatory_tag
+            )
             retrieved = _retrieve_chunks_for_question(
                 q_text, chunks, chunk_embeddings, top_k=top_k
             )
@@ -234,6 +261,10 @@ def score_resume_with_rag(
                 retrieved_chunks=retrieved,
             )
             all_scored.append(scored)
+        logger.info(
+            "✅ [Scoring] Completed category '%s'",
+            category_name
+        )
 
     max_q = settings.max_questions_per_category
 

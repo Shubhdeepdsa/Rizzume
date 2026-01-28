@@ -30,7 +30,9 @@ export default function App() {
     try {
       const response = await scoreResumeApi({
         resumeFile: resumeFile || undefined,
+        resumeText: resumeText || undefined,
         jdFile: jdFile || undefined,
+        jdText: jdText || undefined,
       })
 
       setAppState({
