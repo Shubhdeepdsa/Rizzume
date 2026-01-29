@@ -19,13 +19,13 @@ async def upload_resume(
     token: str = Depends(get_current_user_token),
     pb: PocketBaseService = Depends(get_pocketbase_service),
 ):
-    # 1. Parse Tags
+    # 1. Parse Tag IDs
     try:
-        tag_list = json.loads(tags)
-        if not isinstance(tag_list, list):
-            tag_list = []
+        tag_ids = json.loads(tags)
+        if not isinstance(tag_ids, list):
+            tag_ids = []
     except json.JSONDecodeError:
-        tag_list = []
+        tag_ids = []
 
     # 2. Extract Text
     try:
@@ -65,7 +65,7 @@ async def upload_resume(
             original_text=text_content,
             file_obj=file.file,
             filename=file.filename,
-            tags=tag_list,
+            tags=tag_ids,
             embeddings=serialized_embeddings
         )
         return record

@@ -31,6 +31,8 @@ from app.routes.resumes import router as resumes_router
 app.include_router(resumes_router)
 from app.routes.jds import router as jds_router
 app.include_router(jds_router)
+from app.routes.tags import router as tags_router
+app.include_router(tags_router)
 
 
 @app.on_event("startup")

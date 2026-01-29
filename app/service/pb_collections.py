@@ -1,7 +1,48 @@
 import json
 from typing import Dict, Any, List
 
-def get_resumes_schema(users_collection_id: str = "_pb_users_auth_") -> Dict[str, Any]:
+def get_resume_tags_schema(users_collection_id: str = "_pb_users_auth_") -> Dict[str, Any]:
+    return {
+        "name": "resume_tags",
+        "type": "base",
+        "fields": [
+            {
+                "name": "user",
+                "type": "relation",
+                "required": True,
+                "collectionId": users_collection_id,
+                "cascadeDelete": False,
+                "maxSelect": 1,
+            },
+            {
+                "name": "label",
+                "type": "text",
+                "required": True,
+            },
+            {
+                "name": "created",
+                "type": "autodate",
+                "onCreate": True,
+                "onUpdate": False,
+            },
+            {
+                "name": "updated",
+                "type": "autodate",
+                "onCreate": True,
+                "onUpdate": True,
+            }
+        ],
+        "listRule": "user = @request.auth.id",
+        "viewRule": "user = @request.auth.id",
+        "createRule": "@request.auth.id != '' && user = @request.auth.id",
+        "updateRule": "user = @request.auth.id",
+        "deleteRule": "user = @request.auth.id",
+        "indexes": [
+            "CREATE UNIQUE INDEX idx_user_label ON resume_tags (user, label)"
+        ]
+    }
+
+def get_resumes_schema(users_collection_id: str = "_pb_users_auth_", tags_collection_id: str = "resume_tags") -> Dict[str, Any]:
     return {
         "name": "resumes",
         "type": "base",
@@ -34,8 +75,11 @@ def get_resumes_schema(users_collection_id: str = "_pb_users_auth_") -> Dict[str
             },
             {
                 "name": "tags",
-                "type": "json",
+                "type": "relation",
                 "required": False,
+                "collectionId": tags_collection_id,
+                "cascadeDelete": False,
+                "maxSelect": 0, # Unlimited
             },
             {
                 "name": "embeddings",

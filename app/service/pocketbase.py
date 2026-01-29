@@ -109,7 +109,7 @@ class PocketBaseService:
             "user": user_id,
             "name": name,
             "original_text": original_text,
-            "tags": json.dumps(tags),
+            "tags": tags, # List of IDs now
             "embeddings": json.dumps(embeddings) if embeddings else "null"
         }
         
@@ -151,7 +151,7 @@ class PocketBaseService:
         resp = await self.client.patch(
             f"/api/collections/resumes/records/{resume_id}",
             headers=headers,
-            json={"tags": json.dumps(tags)}
+            json={"tags": tags} # List of IDs
         )
         self._handle_error(resp, "update_resume_tags")
         return resp.json()
@@ -301,6 +301,43 @@ class PocketBaseService:
         self._handle_error(resp, "get_scoring_result_detail")
         return resp.json()
 
+        return resp.json()
+
+    # =========================================================================
+    # Tag Management
+    # =========================================================================
+
+    async def create_tag(self, token: str, user_id: str, label: str) -> Dict[str, Any]:
+        """Create a new tag or return existing if constraint allows (though we use unique index)."""
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {
+            "user": user_id,
+            "label": label
+        }
+        resp = await self.client.post(
+            "/api/collections/resume_tags/records",
+            headers=headers,
+            json=payload
+        )
+        self._handle_error(resp, "create_tag")
+        return resp.json()
+
+    async def list_tags(self, token: str, user_id: str, search_query: Optional[str] = None) -> List[Dict[str, Any]]:
+        headers = {"Authorization": f"Bearer {token}"}
+        # Filter by user
+        filter_str = f'user="{user_id}"'
+        if search_query:
+            # PocketBase syntax for contains is ~
+            filter_str += f' && label ~ "{search_query}"'
+
+        resp = await self.client.get(
+            "/api/collections/resume_tags/records",
+            headers=headers,
+            params={"filter": filter_str, "sort": "label"}
+        )
+        self._handle_error(resp, "list_tags")
+        return resp.json().get("items", [])
+
     # =========================================================================
     # Worker Methods (Admin/System Level - pass known token or use API Key if configured)
     # FOR NOW: Since we don't have Admin Auth flows, we assume the Worker uses a robust token
@@ -337,7 +374,7 @@ class PocketBaseService:
         """
         Check if required collections exist, if not create them.
         """
-        from app.service.pb_collections import get_resumes_schema, get_jds_schema, get_scoring_results_schema
+        from app.service.pb_collections import get_resumes_schema, get_jds_schema, get_scoring_results_schema, get_resume_tags_schema
         
         headers = {"Authorization": f"Bearer {admin_token}"}
         
@@ -363,18 +400,34 @@ class PocketBaseService:
             logger.error(f"Failed to list collections: {e}")
             return
 
-        # 2. Resumes
-        if "resumes" not in existing_names:
-            logger.info("🛠 Creating 'resumes' collection...")
-            schema = get_resumes_schema(users_col_id)
+        # 1.5 Resume Tags (Dependency for Resumes)
+        if "resume_tags" not in existing_names:
+            logger.info("🛠 Creating 'resume_tags' collection...")
+            schema = get_resume_tags_schema(users_col_id)
             try:
                 r = await self.client.post("/api/collections", headers=headers, json=schema)
                 if r.is_success:
-                    existing_names["resumes"] = r.json()["id"]
+                    existing_names["resume_tags"] = r.json()["id"]
                 else:
-                    logger.error(f"Failed to create resumes: {r.text}")
+                    logger.error(f"Failed to create resume_tags: {r.text}")
             except Exception as e:
-                logger.error(f"Error creating resumes: {e}")
+                logger.error(f"Error creating resume_tags: {e}")
+
+        # 2. Resumes
+        if "resumes" not in existing_names:
+            if "resume_tags" in existing_names:
+                logger.info("🛠 Creating 'resumes' collection...")
+                schema = get_resumes_schema(users_col_id, existing_names["resume_tags"])
+                try:
+                    r = await self.client.post("/api/collections", headers=headers, json=schema)
+                    if r.is_success:
+                        existing_names["resumes"] = r.json()["id"]
+                    else:
+                        logger.error(f"Failed to create resumes: {r.text}")
+                except Exception as e:
+                    logger.error(f"Error creating resumes: {e}")
+            else:
+                 logger.warning("Skipping 'resumes' creation because 'resume_tags' missing.")
         
         # 3. JDs
         if "job_descriptions" not in existing_names:
