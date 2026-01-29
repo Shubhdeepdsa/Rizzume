@@ -21,11 +21,21 @@ async def upload_resume(
 ):
     # 1. Parse Tag IDs
     try:
-        tag_ids = json.loads(tags)
-        if not isinstance(tag_ids, list):
-            tag_ids = []
+        if tags.strip().startswith("["):
+            tag_ids = json.loads(tags)
+            if not isinstance(tag_ids, list):
+                 tag_ids = []
+        else:
+             # Handle comma-separated list
+             tag_ids = [t.strip() for t in tags.split(",") if t.strip()]
     except json.JSONDecodeError:
+        # Fallback to comma split if it looked like JSON but failed? 
+        # Or just empty.
+        # Actually simplest is: try json, if fail (or not list), try split.
         tag_ids = []
+        if "," in tags or not tags.startswith("["):
+             tag_ids = [t.strip() for t in tags.split(",") if t.strip()]
+
 
     # 2. Extract Text
     try:

@@ -42,6 +42,59 @@ def get_resume_tags_schema(users_collection_id: str = "_pb_users_auth_") -> Dict
         ]
     }
 
+def get_jd_tags_schema(users_collection_id: str = "_pb_users_auth_") -> Dict[str, Any]:
+    return {
+        "name": "jd_tags",
+        "type": "base",
+        "fields": [
+            {
+                "name": "user",
+                "type": "relation",
+                "required": True,
+                "collectionId": users_collection_id,
+                "cascadeDelete": False,
+                "maxSelect": 1,
+            },
+            {
+                "name": "label",
+                "type": "text",
+                "required": True,
+            },
+            {
+                "name": "category",
+                "type": "select",
+                "required": True,
+                "maxSelect": 1,
+                "values": ["role_family", "skills", "seniority", "domain"]
+            },
+            {
+                "name": "vector",
+                "type": "json",
+                "required": False,
+            },
+            {
+                "name": "created",
+                "type": "autodate",
+                "onCreate": True,
+                "onUpdate": False,
+            },
+            {
+                "name": "updated",
+                "type": "autodate",
+                "onCreate": True,
+                "onUpdate": True,
+            }
+        ],
+        "listRule": "user = @request.auth.id",
+        "viewRule": "user = @request.auth.id",
+        "createRule": "@request.auth.id != '' && user = @request.auth.id",
+        "updateRule": "user = @request.auth.id",
+        "deleteRule": "user = @request.auth.id",
+        "indexes": [
+            "CREATE UNIQUE INDEX idx_user_category_label ON jd_tags (user, category, label)"
+        ]
+    }
+
 def get_resumes_schema(users_collection_id: str = "_pb_users_auth_", tags_collection_id: str = "resume_tags") -> Dict[str, Any]:
     return {
         "name": "resumes",
@@ -79,7 +132,8 @@ def get_resumes_schema(users_collection_id: str = "_pb_users_auth_", tags_collec
                 "required": False,
                 "collectionId": tags_collection_id,
                 "cascadeDelete": False,
-                "maxSelect": 0, # Unlimited
+                "maxSelect": 999,
+                "minSelect": 0,
             },
             {
                 "name": "embeddings",
@@ -106,7 +160,7 @@ def get_resumes_schema(users_collection_id: str = "_pb_users_auth_", tags_collec
         "deleteRule": "user = @request.auth.id",
     }
 
-def get_jds_schema(users_collection_id: str = "_pb_users_auth_") -> Dict[str, Any]:
+def get_jds_schema(users_collection_id: str = "_pb_users_auth_", tags_collection_id: str = "jd_tags") -> Dict[str, Any]:
     return {
         "name": "job_descriptions",
         "type": "base",
@@ -141,6 +195,44 @@ def get_jds_schema(users_collection_id: str = "_pb_users_auth_") -> Dict[str, An
                 "name": "original_text",
                 "type": "text",
                 "required": False,
+            },
+            {
+                "name": "job_type",
+                "type": "select",
+                "required": False,
+                "maxSelect": 1,
+                "values": ["full_time", "part_time", "contract", "internship", "freelance"],
+            },
+            {
+                "name": "location_type",
+                "type": "select",
+                "required": False,
+                "maxSelect": 1,
+                "values": ["remote", "onsite", "hybrid"],
+            },
+            {
+                "name": "salary_min",
+                "type": "number",
+                "required": False,
+            },
+            {
+                "name": "salary_max",
+                "type": "number",
+                "required": False,
+            },
+            {
+                "name": "currency",
+                "type": "text",
+                "required": False,
+            },
+             {
+                "name": "tags",
+                "type": "relation",
+                "required": False,
+                "collectionId": tags_collection_id,
+                "cascadeDelete": False,
+                "maxSelect": 999,
+                "minSelect": 0,
             },
             {
                 "name": "generated_questions",

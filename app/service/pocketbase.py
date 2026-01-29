@@ -169,7 +169,8 @@ class PocketBaseService:
         original_text: str,
         questions: List[Dict[str, Any]],
         file_obj: Optional[BinaryIO] = None,
-        filename: Optional[str] = None
+        filename: Optional[str] = None,
+        **kwargs
     ) -> Dict[str, Any]:
         headers = {"Authorization": f"Bearer {token}"}
         
@@ -178,23 +179,22 @@ class PocketBaseService:
             "role_name": role_name,
             "company_name": company_name,
             "original_text": original_text,
-            "generated_questions": json.dumps(questions)
+            "generated_questions": json.dumps(questions),
+            "job_type": kwargs.get("job_type"),
+            "location_type": kwargs.get("location_type"),
+            "salary_min": kwargs.get("salary_min"),
+            "salary_max": kwargs.get("salary_max"),
+            "currency": kwargs.get("currency"),
+            "tags": kwargs.get("tags", [])
         }
+        logger.info(f"📤 [PocketBase] Creating JD with Data: tags={data['tags']}, type={data.get('job_type')}")
         
         files = {}
         if file_obj and filename:
             files["file"] = (filename, file_obj, "application/octet-stream")
             
-        resp = await self.client.post(
-            "/api/collections/job_descriptions/records",
-            headers=headers,
-            data=data,
-            files=files if files else None 
-        ) # Note: if files is None, httpx sends json if data is dict?
-        # Safe way: if files, use 'data' and 'files'. If NO files, use 'json' if we want JSON body, 
-        # but PB accepts specific Content-Type. 
-        # Httpx: if files param provided, it uses multipart/form-data.
-        # If we have no file, PB still accepts multipart, OR we can send JSON.
+        # Prepare request logic
+
         
         if not files:
              resp = await self.client.post(
@@ -203,6 +203,19 @@ class PocketBaseService:
                 json=data
             )
         else:
+             # When using multipart/form-data (files), list fields like 'tags'
+             # might need to be passed as repeated keys or specifically handled.
+             # Httpx handles lists in 'data' by sending multiple fields with same name.
+             # PocketBase supports this.
+             # HOWEVER, sometimes it's shaky.
+             # Let's verify data['tags'] is a list.
+             # Also, 'generated_questions' is JSON string, that's fine.
+             
+             # IMPORTANT: To ensure list is sent correctly, make sure it is a list of strings.
+             # Also, some consumers prefer creating a list of tuples for httpx.
+             # But let's rely on standard httpx behavior first.
+             # If it fails, we might need to iterate.
+             
              resp = await self.client.post(
                 "/api/collections/job_descriptions/records",
                 headers=headers,
@@ -338,6 +351,114 @@ class PocketBaseService:
         self._handle_error(resp, "list_tags")
         return resp.json().get("items", [])
 
+    async def update_resume_tag(self, token: str, tag_id: str, label: str) -> Dict[str, Any]:
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = await self.client.patch(
+            f"/api/collections/resume_tags/records/{tag_id}",
+            headers=headers,
+            json={"label": label}
+        )
+        self._handle_error(resp, "update_resume_tag")
+        return resp.json()
+
+    async def delete_resume_tag(self, token: str, tag_id: str) -> bool:
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = await self.client.delete(
+            f"/api/collections/resume_tags/records/{tag_id}",
+            headers=headers
+        )
+        self._handle_error(resp, "delete_resume_tag")
+        return True
+    async def get_all_tags_with_vectors(self, token: str, user_id: str) -> List[Dict[str, Any]]:
+        """Fetch all JD tags with their vectors for the cache."""
+        headers = {"Authorization": f"Bearer {token}"}
+        # We need ALL tags. Paging might be needed if > 500.
+        # PB default limit is usually 30-50. We need to set high limit.
+        items = []
+        page = 1
+        while True:
+            resp = await self.client.get(
+                "/api/collections/jd_tags/records",
+                headers=headers,
+                params={
+                    "filter": f'user="{user_id}"', 
+                    "sort": "label", 
+                    "page": page, 
+                    "perPage": 500
+                }
+            )
+            data = resp.json()
+            items.extend(data.get("items", []))
+            if page >= data.get("totalPages", 1):
+                break
+            page += 1
+        return items
+
+    async def create_jd_tag(
+        self, 
+        token: str, 
+        user_id: str, 
+        label: str, 
+        category: str, 
+        vector: List[float]
+    ) -> Dict[str, Any]:
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {
+            "user": user_id,
+            "label": label,
+            "category": category,
+            "vector": json.dumps(vector) # Store as JSON
+        }
+        resp = await self.client.post(
+            "/api/collections/jd_tags/records",
+            headers=headers,
+            json=payload
+        )
+        self._handle_error(resp, "create_jd_tag")
+        return resp.json()
+
+    async def update_jd_tag(
+        self,
+        token: str,
+        tag_id: str,
+        data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = await self.client.patch(
+            f"/api/collections/jd_tags/records/{tag_id}",
+            headers=headers,
+            json=data
+        )
+        self._handle_error(resp, "update_jd_tag")
+        return resp.json()
+
+    async def delete_jd_tag(self, token: str, tag_id: str) -> bool:
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = await self.client.delete(
+            f"/api/collections/jd_tags/records/{tag_id}",
+            headers=headers
+        )
+        self._handle_error(resp, "delete_jd_tag")
+        return True
+    
+    async def update_jd(self, token: str, jd_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+         headers = {"Authorization": f"Bearer {token}"}
+         resp = await self.client.patch(
+             f"/api/collections/job_descriptions/records/{jd_id}",
+             headers=headers,
+             json=data
+         )
+         self._handle_error(resp, "update_jd")
+         return resp.json()
+         
+    async def delete_jd(self, token: str, jd_id: str) -> bool:
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = await self.client.delete(
+            f"/api/collections/job_descriptions/records/{jd_id}",
+            headers=headers
+        )
+        self._handle_error(resp, "delete_jd")
+        return True
     # =========================================================================
     # Worker Methods (Admin/System Level - pass known token or use API Key if configured)
     # FOR NOW: Since we don't have Admin Auth flows, we assume the Worker uses a robust token
@@ -374,7 +495,7 @@ class PocketBaseService:
         """
         Check if required collections exist, if not create them.
         """
-        from app.service.pb_collections import get_resumes_schema, get_jds_schema, get_scoring_results_schema, get_resume_tags_schema
+        from app.service.pb_collections import get_resumes_schema, get_jds_schema, get_scoring_results_schema, get_resume_tags_schema, get_jd_tags_schema
         
         headers = {"Authorization": f"Bearer {admin_token}"}
         
@@ -429,18 +550,38 @@ class PocketBaseService:
             else:
                  logger.warning("Skipping 'resumes' creation because 'resume_tags' missing.")
         
-        # 3. JDs
-        if "job_descriptions" not in existing_names:
-            logger.info("🛠 Creating 'job_descriptions' collection...")
-            schema = get_jds_schema(users_col_id)
+        # 3. JD Tags (Dependency for JDs)
+        if "jd_tags" not in existing_names:
+            logger.info("🛠 Creating 'jd_tags' collection...")
+            schema = get_jd_tags_schema(users_col_id)
             try:
                 r = await self.client.post("/api/collections", headers=headers, json=schema)
                 if r.is_success:
-                    existing_names["job_descriptions"] = r.json()["id"]
+                    existing_names["jd_tags"] = r.json()["id"]
                 else:
-                     logger.error(f"Failed to create jds: {r.text}")
+                    logger.error(f"Failed to create jd_tags: {r.text}")
             except Exception as e:
-                logger.error(f"Error creating jds: {e}")
+                logger.error(f"Error creating jd_tags: {e}")
+
+        # 4. JDs
+        if "job_descriptions" not in existing_names:
+            if "jd_tags" in existing_names:
+                logger.info("🛠 Creating 'job_descriptions' collection...")
+                schema = get_jds_schema(users_col_id, existing_names["jd_tags"])
+                try:
+                    r = await self.client.post("/api/collections", headers=headers, json=schema)
+                    if r.is_success:
+                        existing_names["job_descriptions"] = r.json()["id"]
+                    else:
+                        logger.error(f"Failed to create jds: {r.text}")
+                except Exception as e:
+                    logger.error(f"Error creating jds: {e}")
+            else:
+                 logger.warning("Skipping 'job_descriptions' creation because 'jd_tags' missing.")
+        else:
+            # Check if schema needs update to include tags/metadata
+            await self._migrate_job_descriptions_schema(headers, existing_names["job_descriptions"], users_col_id, existing_names.get("jd_tags"))
+
 
         # 4. Scoring Results (needs IDs)
         if "scoring_results" not in existing_names:
@@ -455,8 +596,62 @@ class PocketBaseService:
                     logger.error(f"Error creating scoring_results: {e}")
             else:
                 logger.warning("Skipping 'scoring_results' creation because dependencies missing.")
+
                 
         logger.info("✅ Encured collections exist.")
+
+    async def _migrate_job_descriptions_schema(self, headers: Dict, collection_id: str, users_col_id: str, jd_tags_id: Optional[str]):
+        """Helper to add missing fields to job_descriptions if they don't exist."""
+        try:
+            # Fetch current schema
+            r = await self.client.get(f"/api/collections/{collection_id}", headers=headers)
+            if not r.is_success:
+                logger.error(f"Failed to fetch job_descriptions schema: {r.text}")
+                return
+                
+            col_data = r.json()
+            # Handle both 'fields' (v0.23+) and 'schema' (older)
+            remote_fields_list = col_data.get("fields", col_data.get("schema", []))
+            current_fields = {f["name"] for f in remote_fields_list}
+            
+            # Fields we expect
+            from app.service.pb_collections import get_jds_schema
+            if not jd_tags_id:
+                logger.warning("Cannot migrate jds schema: jd_tags collection missing")
+                return
+
+            full_schema_def = get_jds_schema(users_col_id, jd_tags_id)
+            # PB Collections uses 'fields' now
+            target_fields = full_schema_def.get("fields", full_schema_def.get("schema", []))
+            
+            fields_to_add = []
+            for field in target_fields:
+                if field["name"] not in current_fields:
+                    fields_to_add.append(field)
+            
+            if fields_to_add:
+                logger.info(f"🛠 Migrating 'job_descriptions': Adding {len(fields_to_add)} missing fields...")
+                
+                # Append to existing schema
+                # strict copy of remote fields to avoid reference issues
+                new_fields_list = list(remote_fields_list)
+                new_fields_list.extend(fields_to_add)
+                
+                # Update collection
+                # Use the same key as we found, default to 'fields'
+                key_to_use = "fields" if "fields" in col_data else "schema"
+                update_payload = {key_to_use: new_fields_list}
+                
+                r_update = await self.client.patch(f"/api/collections/{collection_id}", headers=headers, json=update_payload)
+                if r_update.is_success:
+                    logger.info("✅ 'job_descriptions' schema migrated successfully.")
+                else:
+                    logger.error(f"Failed to migrate schema: {r_update.text}")
+            else:
+                logger.info("✅ 'job_descriptions' schema is up to date.")
+
+        except Exception as e:
+            logger.error(f"Migration failed: {e}")
 
     async def update_job_status(
         self, 
