@@ -57,6 +57,12 @@ class Settings(BaseModel):
         description="Default Ollama model name.",
     )
 
+    # Pocketbase
+    pocketbase_url: str = Field(
+        default="http://127.0.0.1:8090",
+        description="Base URL for Pocketbase instance.",
+    )
+
     # Embeddings
     embed_model_name: str = Field(
         ...,
@@ -155,6 +161,7 @@ def get_settings() -> Settings:
     limits_config = yaml_config.get("limits", {})
     scoring_config = yaml_config.get("scoring", {})
     rate_limiting_config = yaml_config.get("rate_limiting", {})
+    pocketbase_config = yaml_config.get("pocketbase", {})
     
     # Get embed_model_name (required)
     embed_model_name: Optional[str] = embeddings_config.get("model_name")
@@ -169,6 +176,9 @@ def get_settings() -> Settings:
             # Ollama settings from YAML
             ollama_base_url=ollama_config.get("base_url", "http://localhost:11434"),
             ollama_default_model=ollama_config.get("default_model", "qwen3:1.7b"),
+            
+            # Pocketbase
+            pocketbase_url=pocketbase_config.get("base_url", "http://127.0.0.1:8090"),
             
             # LLM provider settings from YAML
             llm_provider=llm_config.get("provider", "ollama"),

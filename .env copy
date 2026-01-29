@@ -1,0 +1,16 @@
+# =============================================================================
+# Secret Configuration Values
+# =============================================================================
+# Only API keys and sensitive credentials should be stored here.
+# All other configuration is in config.yaml
+
+# Groq API Key (required when llm.provider is 'groq' in config.yaml)
+# Get your API key from: https://console.groq.com/keys
+GROQ_API_KEY=
+
+# Optional: Application API key for securing endpoints
+# API_KEY=your-optional-api-key-here
+
+# PocketBase Admin Credentials
+PB_ADMIN_EMAIL=
+PB_ADMIN_PASSWORD=

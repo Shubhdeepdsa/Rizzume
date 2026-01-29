@@ -14,6 +14,10 @@ llm:
   provider: "groq"  # Options: 'ollama' or 'groq'
   groq_model: "llama-3.3-70b-versatile"
 
+# Pocketbase Settings
+pocketbase:
+  base_url: "http://127.0.0.1:8090"
+
 # Embeddings
 embeddings:
   model_name: "sentence-transformers/all-mpnet-base-v2"

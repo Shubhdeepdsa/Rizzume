@@ -12,7 +12,7 @@ from app.routes.scoring_route import router
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+app = FastAPI(title="Rizzume")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -25,6 +25,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+from app.routes.auth import router as auth_router
+app.include_router(auth_router)
+from app.routes.resumes import router as resumes_router
+app.include_router(resumes_router)
+from app.routes.jds import router as jds_router
+app.include_router(jds_router)
 
 
 @app.on_event("startup")
@@ -45,6 +51,24 @@ async def startup_event():
     if settings.llm_provider.lower() == "ollama":
         logger.info("  🔗 Ollama URL: %s", settings.ollama_base_url)
     logger.info("═" * 60)
+    
+    # Start Background Worker
+    import asyncio
+    from app.service.worker import process_scoring_queue, ensure_pb_setup
+    
+    async def worker_loop():
+        # First, ensure collections exist (auto-setup)
+        await ensure_pb_setup()
+        
+        logger.info("👷 [Startup] Background worker started.")
+        while True:
+            try:
+                await process_scoring_queue()
+            except Exception as e:
+                logger.error(f"Worker crashed: {e}")
+            await asyncio.sleep(10) # Poll every 10s
+
+    asyncio.create_task(worker_loop())
 
 
 @app.middleware("http")

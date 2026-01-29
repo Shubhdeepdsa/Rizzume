@@ -110,3 +110,31 @@ def generate_jd_questions(jd_text: str) -> JDQuestions:
         )
 
     return questions
+
+def extract_metadata_from_jd(jd_text: str) -> Dict[str, str]:
+    """
+    Extract Role Name and Company Name from JD text using LLM.
+    """
+    settings = get_settings()
+
+    from app.prompts.jd_prompts import (
+        JD_METADATA_SYSTEM_PROMPT,
+        build_jd_metadata_user_prompt,
+    )
+
+    messages = [
+        {"role": "system", "content": JD_METADATA_SYSTEM_PROMPT},
+        {"role": "user", "content": build_jd_metadata_user_prompt(jd_text)},
+    ]
+
+    try:
+        response = call_llm_chat(messages)
+        content = _extract_content_from_ollama_response(response)
+        data = _parse_json_from_content(content)
+        
+        role = data.get("role_name", "Unknown Role")
+        company = data.get("company_name", "Unknown Company")
+        return {"role_name": role, "company_name": company}
+    except Exception as e:
+        logger.error(f"Failed to extract metadata from JD: {e}")
+        return {"role_name": "Unknown Role", "company_name": "Unknown Company"}

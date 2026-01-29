@@ -5,3 +5,17 @@ frontend/package-lock.json
 rizzume-web-app/node_modules/.package-lock.json
 rizzume-web-app/node_modules/
 rizzume-web-app/.next/
+.env
+
+# PocketBase Data
+pb_data/
+pb_migrations/
+
+# Binary Downloads
+pocketbase_*/
+
+# OS
+.DS_Store
+
+# Logs
+*.log

@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 import numpy as np
 
@@ -17,7 +17,7 @@ from app.prompts.jd_prompts import RAG_QUESTION_SCORING_SYSTEM_PROMPT
 logger = logging.getLogger(__name__)
 
 
-def _build_resume_index(resume_text: str) -> Tuple[List[TextChunk], np.ndarray]:
+def build_resume_index(resume_text: str) -> Tuple[List[TextChunk], np.ndarray]:
     """
     Chunk the resume and create an embedding index.
     """
@@ -32,199 +32,33 @@ def _build_resume_index(resume_text: str) -> Tuple[List[TextChunk], np.ndarray]:
     logger.info("✅ [Embeddings] Created %d chunks from resume", len(chunks))
     return chunks, embeddings
 
-
-def _retrieve_chunks_for_question(
-    question: str,
-    chunks: List[TextChunk],
-    chunk_embeddings: np.ndarray,
-    top_k: int = 3,
-) -> List[RetrievedChunk]:
-    """
-    Retrieve top_k chunks most relevant to the question.
-    """
-    question_emb = embed_texts([question])  # shape (1, d)
-    sims = cosine_sim_matrix(question_emb, chunk_embeddings)[0]  # shape (num_chunks,)
-
-    # top_k indices
-    if len(sims) == 0:
-        return []
-
-    top_k = min(top_k, len(sims))
-    top_indices = np.argsort(-sims)[:top_k]
-
-    retrieved: List[RetrievedChunk] = []
-    for idx in top_indices:
-        c = chunks[int(idx)]
-        retrieved.append(
-            RetrievedChunk(
-                chunk_id=c.id,
-                start=c.start,
-                end=c.end,
-                similarity=float(sims[idx]),
-                text=c.text,
-            )
-        )
-
-    return retrieved
-
-
-def _extract_content_from_ollama_response(response: Dict[str, Any]) -> str:
-    message = response.get("message") or {}
-    content = message.get("content")
-    if not isinstance(content, str):
-        raise ValueError(f"Ollama response missing 'message.content': {response!r}")
-    return content
-
-
-def _parse_scoring_json(content: str) -> Dict[str, Any]:
-    """
-    Parse the scoring JSON from the LLM output.
-    Handles ```json ... ``` wrapping if present.
-    """
-    text = content.strip()
-
-    if text.startswith("```"):
-        text = text.lstrip("`")
-        if text.lower().startswith("json"):
-            text = text[4:].strip()
-        if text.endswith("```"):
-            text = text[:-3].strip()
-
-    return json.loads(text)
-
-
-def _score_single_question_with_rag(
-    category: str,
-    question: str,
-    is_mandatory: bool,
-    retrieved_chunks: List[RetrievedChunk],
-) -> ScoredQuestion:
-    """
-    Call LLM with question + evidence, parse JSON, and build ScoredQuestion.
-    """
-    if not retrieved_chunks:
-        evidence_text = ""
-    else:
-        evidence_text = "\n\n---\n\n".join(c.text for c in retrieved_chunks)
-
-    evidence_chars = len(evidence_text)
-
-    messages = [
-        {"role": "system", "content": RAG_QUESTION_SCORING_SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": build_rag_question_scoring_user_prompt(
-                question, evidence_text
-            ),
-        },
-    ]
-
-    response = call_llm_chat(messages)
-    content = _extract_content_from_ollama_response(response)
-
-    try:
-        parsed = _parse_scoring_json(content)
-    except json.JSONDecodeError as e:
-        raise ValueError(
-            f"Failed to parse scoring JSON for question '{question}': {e}\nContent: {content[:500]}"
-        )
-
-    answer = str(parsed.get("answer", "")).strip()
-    score_raw = parsed.get("score", 0)
-    reasoning = str(parsed.get("reasoning", "")).strip()
-
-    try:
-        score = float(score_raw)
-    except (TypeError, ValueError):
-        score = 0.0
-
-    score = max(0.0, min(10.0, score))
-
-    return ScoredQuestion(
-        category=category,
-        question=question,
-        is_mandatory=is_mandatory,
-        answer=answer,
-        score=score,
-        reasoning=reasoning,
-        evidence_chars=evidence_chars,
-        retrieved_chunks=retrieved_chunks,
-    )
-
-
-def _compute_final_score(
-    scored_questions: List[ScoredQuestion],
-    mandatory_weight: float,
-    optional_weight: float,
-    mandatory_cap_weight: float,
-) -> float:
-    """
-    Compute final score with weighted average and mandatory cap.
-    
-    Formula:
-    1. weighted_avg = Σ(score × weight) / Σ(weight)
-    2. mandatory_ratio = avg_mandatory_score / 10.0
-    3. cap_multiplier = mandatory_cap_weight × mandatory_ratio + (1 - mandatory_cap_weight)
-    4. final_score = weighted_avg × cap_multiplier
-    
-    Returns score in 0-10 range.
-    """
-    if not scored_questions:
-        return 0.0
-
-    # Step 1: Weighted average
-    total_weight = 0.0
-    weighted_sum = 0.0
-    
-    # Also track mandatory scores separately
-    mandatory_scores: List[float] = []
-    
-    for q in scored_questions:
-        weight = mandatory_weight if q.is_mandatory else optional_weight
-        weighted_sum += q.score * weight
-        total_weight += weight
-        
-        if q.is_mandatory:
-            mandatory_scores.append(q.score)
-    
-    weighted_avg = weighted_sum / total_weight if total_weight > 0 else 0.0
-    
-    # Step 2: Apply mandatory cap
-    if mandatory_scores:
-        avg_mandatory = sum(mandatory_scores) / len(mandatory_scores)
-        mandatory_ratio = avg_mandatory / 10.0  # Normalize to 0-1
-        cap_multiplier = mandatory_cap_weight * mandatory_ratio + (1 - mandatory_cap_weight)
-    else:
-        cap_multiplier = 1.0  # No mandatory questions = no penalty
-    
-    final_score = weighted_avg * cap_multiplier
-    
-    # Ensure score stays in 0-10 range
-    return max(0.0, min(10.0, final_score))
-
-
 def score_resume_with_rag(
     jd_questions: JDQuestions,
     resume_text: str,
     top_k: int = 3,
+    precomputed_index: Optional[Tuple[List[TextChunk], np.ndarray]] = None,
 ) -> ResumeRagResult:
     """
     Main high-level API:
 
-    - Build RAG index over resume.
+    - Build RAG index over resume (or use precomputed).
     - For each JD question (4 categories), retrieve top_k chunks.
     - Call LLM to answer + score each question.
     - Return a ResumeRagResult with full audit trail.
     """
     settings = get_settings()
 
-    if len(resume_text) > settings.max_resume_chars:
+    if not precomputed_index and len(resume_text) > settings.max_resume_chars:
         raise ValidationAppError(
             f"Resume text is too long (>{settings.max_resume_chars} characters) "
             "for processing."
         )
 
-    chunks, chunk_embeddings = _build_resume_index(resume_text)
+    if precomputed_index:
+        chunks, chunk_embeddings = precomputed_index
+        logger.info("📊 [Embeddings] Using precomputed index from DB")
+    else:
+        chunks, chunk_embeddings = build_resume_index(resume_text)
 
     all_scored: list[ScoredQuestion] = []
 
@@ -285,3 +119,152 @@ def score_resume_with_rag(
         questions=all_scored,
         average_score=avg_score,
     )
+
+
+def _retrieve_chunks_for_question(
+    question_text: str,
+    chunks: List[TextChunk],
+    chunk_embeddings: np.ndarray,
+    top_k: int = 3
+) -> List[RetrievedChunk]:
+    """
+    Search for top_k most similar chunks to the question.
+    """
+    # 1. Embed question (single string)
+    q_emb = embed_texts([question_text])[0]  # shape (dim,)
+    
+    # 2. Cosine similarity
+    q_emb_matrix = np.array([q_emb], dtype=np.float32)
+    
+    # helper returns (N, M) matrix -> (N, 1)
+    sims = cosine_sim_matrix(chunk_embeddings, q_emb_matrix)
+    # sims is (N, 1). Flatten to (N,)
+    sims = sims.flatten()
+    
+    # 3. Top-K
+    # sort descending
+    top_indices = np.argsort(sims)[::-1][:top_k]
+    
+    results = []
+    for idx in top_indices:
+        c = chunks[idx]
+        score = float(sims[idx])
+        # Use existing ID if available and valid int, else use index
+        cid = int(c.id) if c.id is not None and str(c.id).isdigit() else idx
+        
+        results.append(RetrievedChunk(
+            chunk_id=cid,
+            start=c.start,
+            end=c.end,
+            similarity=score,
+            text=c.text
+        ))
+        
+    return results
+
+
+def _score_single_question_with_rag(
+    category: str,
+    question: str,
+    is_mandatory: bool,
+    retrieved_chunks: List[RetrievedChunk]
+) -> ScoredQuestion:
+    """
+    Call LLM to answer 'question' given 'retrieved_chunks'.
+    Expects LLM to return JSON with {score, answer, reasoning}.
+    """
+    
+    # 1. Build context string
+    context_text = "\n\n".join([
+        f"--- Chunk {rc.chunk_id} (sim={rc.similarity:.2f}) ---\n{rc.text}"
+        for rc in retrieved_chunks
+    ])
+    
+    # 2. Build Prompt
+    user_prompt = build_rag_question_scoring_user_prompt(
+        category=category,
+        question=question,
+        context=context_text,
+        is_mandatory=is_mandatory
+    )
+    
+    # 3. Call LLM
+    try:
+        llm_output = call_llm_chat(
+            messages=[
+                {"role": "system", "content": RAG_QUESTION_SCORING_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.0 # Strict for scoring
+        )
+        
+        # Extract content string from dict response
+        # call_llm_chat returns {"message": {"role": "assistant", "content": "..."}}
+        if isinstance(llm_output, dict):
+            response_text = llm_output.get("message", {}).get("content", "")
+        else:
+            response_text = str(llm_output)
+        
+        # Clean potential markdown code blocks
+        clean_text = response_text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(clean_text)
+        
+        # Validate/Extract fields with fallbacks
+        score = float(data.get("score", 0))
+        answer = data.get("answer", "No answer provided.")
+        reasoning = data.get("reasoning", "No reasoning provided.")
+        
+    except Exception as e:
+        logger.error(f"Failed to score question '{question}': {e}")
+        score = 0.0
+        answer = "Error during scoring."
+        reasoning = f"LLM error: {str(e)}"
+
+    return ScoredQuestion(
+        category=category,
+        question=question,
+        is_mandatory=is_mandatory,
+        answer=answer,
+        score=score,
+        reasoning=reasoning,
+        evidence_chars=sum(len(rc.text) for rc in retrieved_chunks),
+        retrieved_chunks=retrieved_chunks
+    )
+
+
+def _compute_final_score(
+    questions: List[ScoredQuestion],
+    mandatory_weight: float,
+    optional_weight: float,
+    mandatory_cap_weight: float
+) -> float:
+    """
+    Compute weighted average.
+    """
+    if not questions:
+        return 0.0
+        
+    total_weighted_score = 0.0
+    total_weight = 0.0
+    
+    mandatory_scores = []
+    
+    for q in questions:
+        w = mandatory_weight if q.is_mandatory else optional_weight
+        total_weighted_score += q.score * w
+        total_weight += w
+        
+        if q.is_mandatory:
+            mandatory_scores.append(q.score)
+            
+    if total_weight == 0:
+        return 0.0
+        
+    final_score = total_weighted_score / total_weight
+    
+    if mandatory_scores:
+        avg_mandatory = sum(mandatory_scores) / len(mandatory_scores)
+        if avg_mandatory < 5.0:
+            final_score *= mandatory_cap_weight
+            
+    return round(final_score, 2)

@@ -7,7 +7,7 @@ from fastapi import HTTPException, UploadFile, status
 from app.config import get_settings
 
 
-async def _read_text_from_upload(file: UploadFile) -> str:
+async def read_text_from_upload(file: UploadFile) -> str:
     """
     Extract text from an uploaded file.
     - If PDF -> use pdfplumber

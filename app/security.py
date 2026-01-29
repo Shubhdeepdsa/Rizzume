@@ -2,25 +2,56 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict, deque
-from typing import Deque, Dict, Optional
+from typing import Deque, Dict, Optional, Tuple
 
-from fastapi import Depends, Header, Request
+from fastapi import Depends, Header, Request, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.config import get_settings
 from app.errors import AuthError, RateLimitError
+from app.service.pocketbase import get_pocketbase_service, PocketBaseService
+
+security = HTTPBearer()
+
+async def get_current_user_token(
+    creds: HTTPAuthorizationCredentials = Depends(security),
+) -> str:
+    return creds.credentials
+
+async def get_current_user(
+    token: str = Depends(get_current_user_token),
+    pb: PocketBaseService = Depends(get_pocketbase_service)
+) -> Dict:
+    """
+    Validates token via PB and returns the User Record.
+    Also acts as 'require_auth'.
+    """
+    try:
+        # This calls /api/collections/users/auth-refresh
+        # Return format: { token: "...", record: {...}, meta: {...} }
+        start = time.time()
+        res = await pb.auth_refresh(token)
+        # We can optimize by decoding JWT locally if we had the secret,
+        # but calling PB guarantees revocation checks.
+        record = res.get("record")
+        if not record:
+             raise AuthError("Token valid but no record returned.")
+        return record
+    except Exception as e:
+        # Map specific PB errors if needed
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+        )
 
 
 def require_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
     """
-    If APP_API_KEY is set in configuration, requests must include:
-      X-API-Key: <value>
-
-    If APP_API_KEY is not set, auth is effectively disabled (useful in dev).
+    Legacy API Key Check (Optional).
     """
     settings = get_settings()
     expected = getattr(settings, "api_key", None)
     if not expected:
-        # Auth disabled (dev mode).
         return
 
     if x_api_key != expected:
@@ -41,20 +72,18 @@ def _get_rate_limit_settings() -> tuple[int, float]:
     return max_requests, _WINDOW_SECONDS
 
 
-def rate_limiter(request: Request, _: None = Depends(require_api_key)) -> None:
+def rate_limiter(request: Request) -> None:
     """
-    Naive in-memory, per-client rate limiter.
-
-    The key is derived from the API key if present, otherwise from client host.
-    This is best-effort and suitable for a single-instance deployment or demo.
+    Naive in-memory rate limiter.
     """
+    # Skip for now or adapt to use User ID if available? 
+    # For now keep naive host-based.
     max_requests, window_seconds = _get_rate_limit_settings()
     now = time.time()
 
-    client_key = request.headers.get("X-API-Key") or request.client.host or "anonymous"
+    client_key = request.client.host or "anonymous"
     dq = _request_history[client_key]
 
-    # Drop timestamps outside the current window.
     while dq and now - dq[0] > window_seconds:
         dq.popleft()
 
@@ -64,4 +93,3 @@ def rate_limiter(request: Request, _: None = Depends(require_api_key)) -> None:
         )
 
     dq.append(now)
-

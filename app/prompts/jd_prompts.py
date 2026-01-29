@@ -146,4 +146,24 @@ Return ONLY JSON, no extra text, with exactly this shape:
   "score": <number between 0 and 10>,
   "reasoning": "brief explanation referencing the evidence you used"
 }
+  "reasoning": "brief explanation referencing the evidence you used"
+}
 """.strip()
+
+JD_METADATA_SYSTEM_PROMPT = """
+You are an expert at analyzing Job Descriptions.
+Your task is to extract the exact 'Role Name' and 'Company Name' from the provided JD text.
+If the company name is not explicitly mentioned, use "Unknown Company".
+If the role name is not explicitly mentioned, infer a suitable title based on the content.
+
+OUTPUT FORMAT:
+Return ONLY valid JSON with this exact structure:
+{
+  "role_name": "...",
+  "company_name": "..."
+}
+""".strip()
+
+def build_jd_metadata_user_prompt(jd_text: str) -> str:
+    # Use first 3000 chars which usually contain header info
+    return f"Extract Role and Company from this text:\n\n{jd_text[:3000]}"

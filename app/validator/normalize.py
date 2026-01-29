@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import File, Form, HTTPException, UploadFile, status
 
 from app.config import get_settings
-from app.helper.text_extracter import _read_text_from_upload
+from app.helper.text_extracter import read_text_from_upload
 from app.schemas.score_input_schema import NormalizedScoreInput
 from app.validator.scoring_validators import _ensure_exactly_one
 
@@ -27,7 +27,7 @@ async def normalize_score_input(
     _ensure_exactly_one("resume", resume_text, resume_file)
 
     if jd_file is not None:
-        jd_content = await _read_text_from_upload(jd_file)
+        jd_content = await read_text_from_upload(jd_file)
     else:
         jd_content = (jd_text or "").strip()
         if not jd_content:
@@ -45,7 +45,7 @@ async def normalize_score_input(
             )
 
     if resume_file is not None:
-        resume_content = await _read_text_from_upload(resume_file)
+        resume_content = await read_text_from_upload(resume_file)
     else:
         resume_content = (resume_text or "").strip()
         if not resume_content:

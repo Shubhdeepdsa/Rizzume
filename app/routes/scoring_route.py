@@ -1,4 +1,5 @@
 import logging
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -7,14 +8,15 @@ from app.errors import AppError, app_error_to_http
 from app.helper.token_utils import estimate_tokens
 from app.schemas.jd_questions_schema import JDQuestions
 from app.schemas.rag_scoring import ResumeRagResult
-from app.schemas.score_input_schema import NormalizedScoreInput
+from app.schemas.score_input_schema import NormalizedScoreInput, BatchScoreRequest, EstimateRequest
 from app.schemas.score_response_schema import (
     ScoreResponse,
     TokenEstimateResponse,
 )
-from app.security import rate_limiter
+from app.security import rate_limiter, get_current_user_token, get_current_user
 from app.service.jd_question_generator import generate_jd_questions
 from app.service.resume_rag_scorer import score_resume_with_rag
+from app.service.pocketbase import get_pocketbase_service, PocketBaseService
 from app.validator.normalize import normalize_score_input
 
 logger = logging.getLogger(__name__)
@@ -27,88 +29,7 @@ async def score_root():
     return {"status": "scoring running"}
 
 
-@router.post(
-    "/score", response_model=ScoreResponse, dependencies=[Depends(rate_limiter)]
-)
-async def score_resume(
-    payload: NormalizedScoreInput = Depends(normalize_score_input),
-) -> ScoreResponse:
-    """
-    JD and Resume are BOTH REQUIRED.
 
-    Contract (multipart/form-data):
-
-      - To send files:
-            jd_file: UploadFile (PDF / text)
-            resume_file: UploadFile (PDF / text)
-
-      - To send raw text:
-            jd_text: string
-            resume_text: string
-
-    Exactly one of *_text or *_file must be provided for each of JD and Resume.
-    """
-
-    jd_text = payload.jd
-    resume_text = payload.resume
-    
-    logger.info("🚀 [Score] Starting resume scoring pipeline...")
-    
-    try:
-        logger.info("📝 [Score] Step 1: Extracting JD questions...")
-        jd_questions: JDQuestions = await run_in_threadpool(
-            generate_jd_questions, jd_text
-        )
-        total_questions = (
-            len(jd_questions.education) +
-            len(jd_questions.experience) +
-            len(jd_questions.technical_skills) +
-            len(jd_questions.soft_skills)
-        )
-        logger.info("✅ [Score] Step 1 complete: Extracted %d questions", total_questions)
-    except AppError as exc:
-        logger.exception("Failed to generate JD questions (AppError)")
-        raise app_error_to_http(exc)
-    except Exception:
-        logger.exception("Failed to generate JD questions (unexpected)")
-        raise HTTPException(status_code=500, detail="Internal server error.")
-
-    try:
-        logger.info("🎯 [Score] Step 2: Scoring resume against questions...")
-        rag_result: ResumeRagResult = await run_in_threadpool(
-            score_resume_with_rag,
-            jd_questions,
-            resume_text,
-            3,
-        )
-        logger.info(
-            "✅ [Score] Step 2 complete: Final score = %.2f/10",
-            rag_result.average_score
-        )
-    except AppError as exc:
-        logger.exception("Failed to score resume with RAG (AppError)")
-        raise app_error_to_http(exc)
-    except Exception:
-        logger.exception("Failed to score resume with RAG (unexpected)")
-        raise HTTPException(status_code=500, detail="Internal server error.")
-
-    jd_tokens = estimate_tokens(jd_text)
-    resume_tokens = estimate_tokens(resume_text)
-    
-    logger.info("🎉 [Score] Pipeline complete! Score: %.2f/10", rag_result.average_score)
-
-    return ScoreResponse(
-        success=True,
-        result=rag_result,
-        jd_text_length=len(jd_text),
-        resume_text_length=len(resume_text),
-        jd_token_estimate=jd_tokens,
-        resume_token_estimate=resume_tokens,
-        jd_text=jd_text,
-        resume_text=resume_text,
-        questions=jd_questions,
-        message="Resume scored successfully.",
-    )
 
 
 @router.post(
@@ -117,28 +38,64 @@ async def score_resume(
     dependencies=[Depends(rate_limiter)],
 )
 async def estimate_tokens_endpoint(
-    payload: NormalizedScoreInput = Depends(normalize_score_input),
+    payload: EstimateRequest,
+    token: str = Depends(get_current_user_token),
+    pb: PocketBaseService = Depends(get_pocketbase_service),
 ) -> TokenEstimateResponse:
     """
-    Estimate token usage for JD and Resume without running full scoring.
-
-    This uses the same normalization pipeline as /score, so it supports
-    both raw text and file uploads. The estimates are approximate and
-    intended for UX only (e.g. progress bars and warnings).
+    Estimate tokens for a specific Resume and JD by ID.
+    Reads content from PocketBase and calculates accurate token counts using tiktoken.
     """
-    jd_text = payload.jd
-    resume_text = payload.resume
+    try:
+        # Fetch Text
+        resume_record = await pb.get_resume(token, payload.resume_id)
+        jd_record = await pb.get_jd(token, payload.jd_id)
+        
+        resume_text = resume_record.get("original_text", "") or ""
+        jd_text = jd_record.get("original_text", "") or ""
+        
+        # Estimate
+        jd_tokens = estimate_tokens(jd_text)
+        resume_tokens = estimate_tokens(resume_text)
+        
+        return TokenEstimateResponse(
+            jd_text_length=len(jd_text),
+            resume_text_length=len(resume_text),
+            jd_token_estimate=jd_tokens,
+            resume_token_estimate=resume_tokens,
+        )
+    except Exception as e:
+        logger.exception("Failed to estimate tokens")
+        raise HTTPException(status_code=500, detail=f"Failed to estimate: {e}")
 
-    jd_tokens = estimate_tokens(jd_text)
-    resume_tokens = estimate_tokens(resume_text)
 
-    return TokenEstimateResponse(
-        jd_text_length=len(jd_text),
-        resume_text_length=len(resume_text),
-        jd_token_estimate=jd_tokens,
-        resume_token_estimate=resume_tokens,
-    )
 
+@router.post("/batch-score")
+async def batch_score(
+    payload: BatchScoreRequest,
+    user: dict = Depends(get_current_user),
+    token: str = Depends(get_current_user_token),
+    pb: PocketBaseService = Depends(get_pocketbase_service),
+):
+    """
+    Queue a batch of scoring jobs.
+    Creates M x N jobs (All Resumes against All JDs).
+    """
+    created_jobs = []
+    
+    for resume_id in payload.resume_ids:
+        for jd_id in payload.jd_ids:
+            try:
+                job = await pb.create_scoring_job(token, user["id"], resume_id, jd_id)
+                created_jobs.append(job)
+            except Exception as e:
+                logger.error(f"Failed to queue job for R:{resume_id} JD:{jd_id} - {e}")
+                
+    return {
+        "success": True,
+        "queued_count": len(created_jobs),
+        "jobs": created_jobs
+    }
 
 @router.post("/dummy", dependencies=[Depends(rate_limiter)])
 async def dummy(
@@ -538,3 +495,38 @@ async def dummy(
         },
         "message": "Resume scored successfully.",
     }
+
+
+@router.get("/results")
+async def get_results(
+    resume_id: Optional[str] = None,
+    jd_id: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+    token: str = Depends(get_current_user_token),
+    pb: PocketBaseService = Depends(get_pocketbase_service),
+):
+    """
+    Fetch scoring history.
+    Supports filtering by resume_id and jd_id.
+    """
+    try:
+        items = await pb.get_scoring_results(token, user["id"], resume_id=resume_id, jd_id=jd_id)
+        return items
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/results/{record_id}")
+async def get_result_detail(
+    record_id: str,
+    token: str = Depends(get_current_user_token),
+    pb: PocketBaseService = Depends(get_pocketbase_service),
+):
+    """
+    Fetch detailed analysis for a specific scoring job.
+    """
+    try:
+        item = await pb.get_scoring_result_detail(token, record_id)
+        return item
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
