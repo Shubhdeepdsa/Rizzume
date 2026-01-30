@@ -1,50 +1,19 @@
 "use client"
 
-import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { LandingHero } from "@/components/landing-hero"
-import { DataInputStep } from "@/components/data-input-step"
-import { LoadingState } from "@/components/loading-state"
-import { AnalysisLayout } from "@/components/analysis-layout"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { scoreResumeApi, type ScoreResponse } from "@/lib/api"
-
-type AppStep = "landing" | "input" | "loading" | "analysis"
-
-interface AppState {
-  step: AppStep
-  scoreResult?: ScoreResponse
-}
+import { useAuth } from "@/context/auth-context"
 
 export default function App() {
-  const [appState, setAppState] = useState<AppState>({ step: "landing" })
-  const [isLoading, setIsLoading] = useState(false)
+  const router = useRouter()
+  const { isAuthenticated } = useAuth()
 
   const handleGetStarted = () => {
-    setAppState({ step: "input" })
-  }
-
-  const handleAnalyze = async (resumeFile: File | null, resumeText: string, jdFile: File | null, jdText: string) => {
-    setIsLoading(true)
-    setAppState({ step: "loading" })
-
-    try {
-      const response = await scoreResumeApi({
-        resumeFile: resumeFile || undefined,
-        resumeText: resumeText || undefined,
-        jdFile: jdFile || undefined,
-        jdText: jdText || undefined,
-      })
-
-      setAppState({
-        step: "analysis",
-        scoreResult: response,
-      })
-    } catch (error) {
-      console.error("Analysis error:", error)
-      setAppState({ step: "input" })
-      throw error
-    } finally {
-      setIsLoading(false)
+    if (isAuthenticated) {
+      router.push("/home")
+    } else {
+      router.push("/auth?view=login")
     }
   }
 
@@ -56,15 +25,7 @@ export default function App() {
       </div>
 
       {/* Main content */}
-      {appState.step === "landing" && <LandingHero onGetStarted={handleGetStarted} />}
-
-      {appState.step === "input" && <DataInputStep onAnalyze={handleAnalyze} isLoading={isLoading} />}
-
-      {appState.step === "loading" && <LoadingState />}
-
-      {appState.step === "analysis" && appState.scoreResult && (
-        <AnalysisLayout result={appState.scoreResult.result} resumeText={appState.scoreResult.resume_text} />
-      )}
+      <LandingHero onGetStarted={handleGetStarted} />
     </div>
   )
 }

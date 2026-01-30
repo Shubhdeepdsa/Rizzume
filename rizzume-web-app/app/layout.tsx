@@ -26,6 +26,9 @@ export const viewport: Viewport = {
   maximumScale: 1,
 }
 
+import { Toaster } from "@/components/ui/sonner"
+import { AuthProvider } from "@/context/auth-context"
+
 export default function RootLayout({
   children,
 }: {
@@ -35,8 +38,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head />
       <body className={`${geist.className} ${geistMono.className}`}>
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          {children}
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <AuthProvider>
+            {children}
+            <Toaster />
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
