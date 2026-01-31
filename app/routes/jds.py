@@ -1,6 +1,9 @@
-from typing import Optional
+from typing import Optional, List
+from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException, Body
+from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 from fastapi.concurrency import run_in_threadpool
 
 from app.helper.text_extracter import read_text_from_upload
@@ -126,3 +129,70 @@ async def list_jds(
         return items
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class JDFilter(BaseModel):
+    tags: Optional[List[str]] = None
+    created_after: Optional[str] = None
+    created_before: Optional[str] = None
+    role_contains: Optional[str] = None
+    company_contains: Optional[str] = None
+
+@router.post("/search")
+async def search_jds(
+    filter_data: JDFilter,
+    user: dict = Depends(get_current_user),
+    token: str = Depends(get_current_user_token),
+    pb: PocketBaseService = Depends(get_pocketbase_service),
+):
+    try:
+        criteria = filter_data.model_dump(exclude_none=True)
+        items = await pb.search_jds(token, user["id"], criteria)
+        return items
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{jd_id}/download")
+async def download_jd(
+    jd_id: str,
+    user: dict = Depends(get_current_user),
+    token: str = Depends(get_current_user_token),
+    pb: PocketBaseService = Depends(get_pocketbase_service),
+):
+    try:
+        # 1. Get JD metadata
+        jd = await pb.get_jd(token, jd_id)
+        filename = jd.get("file")
+        
+        if not filename:
+             # Fallback to streaming text content as file
+             text_content = jd.get("original_text", "")
+             async def text_iter():
+                 yield text_content.encode("utf-8")
+             
+             return StreamingResponse(
+                 text_iter(),
+                 media_type="text/plain",
+                 headers={
+                     "Content-Disposition": f'inline; filename="{jd.get("role_name", "job")}.txt"'
+                 }
+             )
+
+        # 2. Get stream for file
+        stream_resp = await pb.get_file_stream(token, "job_descriptions", jd_id, filename)
+        
+        if stream_resp.status_code != 200:
+             error_text = await stream_resp.aread()
+             await stream_resp.aclose()
+             raise HTTPException(status_code=stream_resp.status_code, detail=f"PocketBase File Error: {error_text.decode('utf-8')}")
+        
+        return StreamingResponse(
+            stream_resp.aiter_bytes(),
+            media_type=stream_resp.headers.get("content-type", "application/octet-stream"),
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"'
+            },
+            background=BackgroundTask(stream_resp.aclose)
+        )
+    except Exception as e:
+         raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")

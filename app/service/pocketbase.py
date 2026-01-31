@@ -678,6 +678,85 @@ class PocketBaseService:
 
 
 
+
+    async def search_resumes(self, token: str, user_id: str, criteria: Dict[str, Any]) -> List[Dict[str, Any]]:
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        # Base filter: user ownership
+        filters = [f'user="{user_id}"']
+        
+        # Date filters
+        if criteria.get("created_after"):
+            filters.append(f'created >= "{criteria["created_after"]}"')
+        if criteria.get("created_before"):
+            filters.append(f'created <= "{criteria["created_before"]}"')
+            
+        # Name filter
+        if criteria.get("name_contains"):
+             filters.append(f'name ~ "{criteria["name_contains"]}"')
+        
+        # Tags filter (AND logic: must contain ALL provided tags)
+        # PocketBase doesn't natively support "contains all" for relation arrays easily in one go without complex syntax
+        # But 'tags ~ "id"' works if tags is an array of relation IDs.
+        # To match ALL, we append a condition for each tag.
+        if criteria.get("tags"):
+            for tag_id in criteria["tags"]:
+                filters.append(f'tags ~ "{tag_id}"')
+
+        filter_str = " && ".join(filters)
+        
+        resp = await self.client.get(
+            "/api/collections/resumes/records",
+            headers=headers,
+            params={"filter": filter_str, "sort": "-created", "perPage": 500} # Fetch plenty
+        )
+        self._handle_error(resp, "search_resumes")
+        return resp.json().get("items", [])
+
+    async def search_jds(self, token: str, user_id: str, criteria: Dict[str, Any]) -> List[Dict[str, Any]]:
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        filters = [f'user="{user_id}"']
+        
+        if criteria.get("created_after"):
+            filters.append(f'created >= "{criteria["created_after"]}"')
+        if criteria.get("created_before"):
+            filters.append(f'created <= "{criteria["created_before"]}"')
+            
+        if criteria.get("role_contains"):
+             filters.append(f'role_name ~ "{criteria["role_contains"]}"')
+             
+        if criteria.get("company_contains"):
+             filters.append(f'company_name ~ "{criteria["company_contains"]}"')
+        
+        if criteria.get("tags"):
+            for tag_id in criteria["tags"]:
+                filters.append(f'tags ~ "{tag_id}"')
+
+        filter_str = " && ".join(filters)
+        
+        resp = await self.client.get(
+            "/api/collections/job_descriptions/records",
+            headers=headers,
+            params={"filter": filter_str, "sort": "-created", "perPage": 500}
+        )
+        self._handle_error(resp, "search_jds")
+        return resp.json().get("items", [])
+
+    async def get_file_stream(self, token: str, collection: str, record_id: str, filename: str) -> httpx.Response:
+        """
+        Initiates a stream request to PocketBase for a file.
+        Returns the un-closed httpx.Response object (opened with stream=True).
+        Caller is responsible for streaming content and closing the response (e.g. via BackgroundTask).
+        """
+        headers = {"Authorization": f"Bearer {token}"}
+        url = f"/api/files/{collection}/{record_id}/{filename}"
+        
+        # We use build_request + send(stream=True) to control the stream lifecycle
+        req = self.client.build_request("GET", url, headers=headers)
+        response = await self.client.send(req, stream=True)
+        return response
+
 # Singleton
 _service: Optional[PocketBaseService] = None
 
