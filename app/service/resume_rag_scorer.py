@@ -8,11 +8,12 @@ from app.config import get_settings
 from app.errors import ValidationAppError
 from app.helper.prompt_builder import build_rag_question_scoring_user_prompt
 from app.schemas.jd_questions_schema import JDQuestions
-from app.schemas.rag_scoring import RetrievedChunk, ResumeRagResult, ScoredQuestion
+from app.schemas.rag_scoring import RetrievedChunk, ResumeRagResult, ScoredQuestion, ActionPlan
 from app.service.chunking import TextChunk, chunk_text
 from app.service.embedding_service import cosine_sim_matrix, embed_texts
 from app.service.llm_client import call_llm_chat
-from app.prompts.jd_prompts import RAG_QUESTION_SCORING_SYSTEM_PROMPT
+from app.service.llm_client import call_llm_chat
+from app.prompts.jd_prompts import RAG_QUESTION_SCORING_SYSTEM_PROMPT, ACTION_PLAN_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -115,9 +116,13 @@ def score_resume_with_rag(
         settings.mandatory_cap_weight,
     )
 
+    # Generate Action Plan using the scored questions
+    action_plan = _generate_action_plan(all_scored)
+
     return ResumeRagResult(
         questions=all_scored,
         average_score=avg_score,
+        action_plan=action_plan
     )
 
 
@@ -268,3 +273,67 @@ def _compute_final_score(
             final_score *= mandatory_cap_weight
             
     return round(final_score, 2)
+
+
+def _generate_action_plan(scored_questions: List[ScoredQuestion]) -> Optional[ActionPlan]:
+    """
+    Generate actionable feedback based on scored questions.
+    """
+    if not scored_questions:
+        return None
+
+    missing_items = []
+    weak_items = []
+    
+    for q in scored_questions:
+        # Format: "Category: Question (Score/10) - Reasoning"
+        item_str = f"- [{q.category.upper()}] {q.question} (Score: {q.score}/10)\n  Reasoning: {q.reasoning}"
+        
+        if q.score <= 3:
+            missing_items.append(item_str)
+        elif 4 <= q.score <= 6:
+            weak_items.append(item_str)
+            
+    # If no improvements needed, skip
+    if not missing_items and not weak_items:
+        return None
+        
+    missing_text = "\n".join(missing_items) if missing_items else "No critical gaps found."
+    weak_text = "\n".join(weak_items) if weak_items else "No weak areas found."
+    
+    prompt = ACTION_PLAN_PROMPT.format(
+        missing_list=missing_text,
+        weak_list=weak_text
+    )
+    
+    try:
+        settings = get_settings()
+        logger.info("📝 [ActionPlan] Generating action plan...")
+        
+        llm_output = call_llm_chat(
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7 # Slight creativity for advice
+        )
+        
+        if isinstance(llm_output, dict):
+            response_text = llm_output.get("message", {}).get("content", "")
+        else:
+            response_text = str(llm_output)
+            
+        clean_text = response_text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(clean_text)
+        
+        return ActionPlan(
+            critical_actions=data.get("critical_actions", []),
+            improvement_suggestions=data.get("improvement_suggestions", [])
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to generate action plan: {e}")
+        # Return fallback empty plan rather than failing the whole request
+        return ActionPlan(
+            critical_actions=["Failed to generate action plan. Please review individual scores."],
+            improvement_suggestions=[]
+        )

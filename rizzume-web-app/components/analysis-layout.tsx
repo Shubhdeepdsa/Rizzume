@@ -5,6 +5,7 @@ import type { ScoreResult } from "@/lib/api"
 import { QuestionFilters } from "./question-filters"
 import { QuestionCard } from "./question-card"
 import { QuestionDetailPanel } from "./question-detail-panel"
+import { ActionPlanCard } from "./dashboard/scoring/action-plan-card"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 
 interface AnalysisLayoutProps {
@@ -95,6 +96,17 @@ export function AnalysisLayout({ result, resumeText }: AnalysisLayoutProps) {
           </div>
         </div>
 
+
+
+        {/* Action Plan Section */}
+        {
+          result.action_plan && (
+            <div className="mb-12">
+              <ActionPlanCard plan={result.action_plan} />
+            </div>
+          )
+        }
+
         {/* Filters */}
         <div className="mb-8">
           <QuestionFilters categories={categories} selected={selectedFilter} onSelect={setSelectedFilter} />
@@ -130,7 +142,7 @@ export function AnalysisLayout({ result, resumeText }: AnalysisLayoutProps) {
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </div >
+    </div >
   )
 }

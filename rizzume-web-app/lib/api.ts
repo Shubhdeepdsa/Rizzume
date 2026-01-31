@@ -19,9 +19,15 @@ export interface QuestionItem {
   retrieved_chunks: RetrievedChunk[]
 }
 
+export interface ActionPlan {
+  critical_actions: string[]
+  improvement_suggestions: string[]
+}
+
 export interface ScoreResult {
   questions: QuestionItem[]
   average_score: number
+  action_plan?: ActionPlan
 }
 
 export interface TokenEstimate {

@@ -149,24 +149,20 @@ Scores are aggregated by category and overall, providing a comprehensive match a
 
 ### Prerequisites
 
-- **Docker & Docker Compose** (recommended)
-- **Ollama** with a model installed (default: `qwen3:1.7b`)
+- **Docker Desktop** (Required)
+- **Git**
 
-### 🐳 Option 1: Docker (Recommended)
+### ⚡ One-Command Start (Recommended)
 
-The fastest way to get started! Just run:
+The easiest way to run Rizzume. This script handles environment setup, installs the AI model, and starts the application.
 
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/rizzume.git
-cd rizzume
+cd final_resume_scorer
 
-# Start Ollama (in a separate terminal)
-ollama serve
-ollama pull qwen3:1.7b
-
-# Start the application
-./run.sh
+# Run the auto-setup script
+./start.sh
 ```
 
 That's it! Access the app at:
@@ -177,11 +173,9 @@ That's it! Access the app at:
 
 | Script | Description |
 |--------|-------------|
-| `./run.sh` | Start in **production mode** |
-| `./dev.sh` | Start in **development mode** with hot-reload |
-| `./dev.sh --docker` | Development mode using Docker |
-| `./dev.sh --backend` | Start only the backend |
-| `./dev.sh --frontend` | Start only the frontend |
+| `./start.sh` | **Automated Setup & Start** (Recommended) |
+| `./run.sh` | Start in production mode (Docker) |
+| `./dev.sh` | Start in development mode (Local or Docker) |
 | `./stop.sh` | Stop all containers |
 
 #### Docker Commands

@@ -8,10 +8,11 @@ from app.errors import AppError, app_error_to_http
 from app.helper.token_utils import estimate_tokens
 from app.schemas.jd_questions_schema import JDQuestions
 from app.schemas.rag_scoring import ResumeRagResult
-from app.schemas.score_input_schema import NormalizedScoreInput, BatchScoreRequest, EstimateRequest
+from app.schemas.score_input_schema import NormalizedScoreInput, BatchScoreRequest, EstimateRequest, BatchEstimateRequest
 from app.schemas.score_response_schema import (
     ScoreResponse,
     TokenEstimateResponse,
+    BatchTokenEstimateResponse,
 )
 from app.security import rate_limiter, get_current_user_token, get_current_user
 from app.service.jd_question_generator import generate_jd_questions
@@ -71,7 +72,88 @@ async def estimate_tokens_endpoint(
 
 
 
+
+@router.post(
+    "/score/estimate-batch",
+    response_model=BatchTokenEstimateResponse,
+    dependencies=[Depends(rate_limiter)],
+)
+async def estimate_batch_tokens_endpoint(
+    payload: BatchEstimateRequest,
+    token: str = Depends(get_current_user_token),
+    pb: PocketBaseService = Depends(get_pocketbase_service),
+) -> BatchTokenEstimateResponse:
+    """
+    Estimate total tokens for all combinations of selected Resumes and JDs.
+    """
+    try:
+        # 1. Fetch all resumes
+        resumes = []
+        for r_id in payload.resume_ids:
+            try:
+                r = await pb.get_resume(token, r_id)
+                resumes.append(r)
+            except Exception:
+                logger.warning(f"Failed to fetch resume {r_id} for estimation")
+
+        # 2. Fetch all JDs
+        jds = []
+        for j_id in payload.jd_ids:
+            try:
+                j = await pb.get_jd(token, j_id)
+                jds.append(j)
+            except Exception:
+                logger.warning(f"Failed to fetch JD {j_id} for estimation")
+
+        if not resumes or not jds:
+            return BatchTokenEstimateResponse(
+                total_tokens=0,
+                resume_count=len(resumes),
+                jd_count=len(jds),
+                resume_tokens_sum=0,
+                jd_tokens_sum=0,
+                overhead_tokens=0
+            )
+
+        # 3. Calculate tokens for each unique item
+        resume_tokens_sum = 0
+        for r in resumes:
+            text = r.get("original_text", "") or ""
+            resume_tokens_sum += estimate_tokens(text)
+
+        jd_tokens_sum = 0
+        for j in jds:
+            text = j.get("original_text", "") or ""
+            jd_tokens_sum += estimate_tokens(text)
+            
+        # 4. Calculate total for combinations
+        # Total = (Sum(ResumeTokens) * Count(JDs)) + (Sum(JDTokens) * Count(Resumes))
+        
+        count_resumes = len(resumes)
+        count_jds = len(jds)
+        
+        # Add buffer for prompt template overhead (e.g. ~500 tokens per combination)
+        overhead_per_combo = 500
+        total_overhead = count_resumes * count_jds * overhead_per_combo
+        
+        total_tokens = (resume_tokens_sum * count_jds) + (jd_tokens_sum * count_resumes) + total_overhead
+
+        return BatchTokenEstimateResponse(
+            total_tokens=total_tokens,
+            resume_count=count_resumes,
+            jd_count=count_jds,
+            resume_tokens_sum=resume_tokens_sum,
+            jd_tokens_sum=jd_tokens_sum,
+            overhead_tokens=total_overhead
+        )
+
+    except Exception as e:
+        logger.exception("Failed to batch estimate tokens")
+        raise HTTPException(status_code=500, detail=f"Failed to estimate: {e}")
+
+
 @router.post("/batch-score")
+
 async def batch_score(
     payload: BatchScoreRequest,
     user: dict = Depends(get_current_user),

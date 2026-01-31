@@ -77,7 +77,8 @@ export default function ScoreDetailPage() {
 
         return {
             average_score: typeof rawResult.average_score === 'number' ? rawResult.average_score : 0,
-            questions: questions
+            questions: questions,
+            action_plan: rawResult.action_plan
         }
     }
 

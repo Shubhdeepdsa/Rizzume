@@ -1,6 +1,6 @@
 
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 
 class RetrievedChunk(BaseModel):
@@ -22,6 +22,13 @@ class ScoredQuestion(BaseModel):
     retrieved_chunks: List[RetrievedChunk]
 
 
+class ActionPlan(BaseModel):
+    critical_actions: List[str]
+    improvement_suggestions: List[str]
+
+
 class ResumeRagResult(BaseModel):
     questions: List[ScoredQuestion]
     average_score: float
+    action_plan: Optional[ActionPlan] = None
+

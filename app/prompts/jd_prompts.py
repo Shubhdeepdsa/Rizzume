@@ -167,3 +167,36 @@ Return ONLY valid JSON with this exact structure:
 def build_jd_metadata_user_prompt(jd_text: str) -> str:
     # Use first 3000 chars which usually contain header info
     return f"Extract Role and Company from this text:\n\n{jd_text[:3000]}"
+
+
+ACTION_PLAN_PROMPT = """
+You are an expert Resume Strategist. You have analyzed a candidate's resume against a Job Description and identified three categories of feedback.
+
+Your goal is to turn this raw data into a clear, actionable To-Do list for the candidate.
+
+INPUT DATA:
+1. MISSING CONTENT (Critical gaps - User scored 0-3/10):
+{missing_list}
+
+2. VAGUE CONTENT (Needs proof - User scored 4-6/10):
+{weak_list}
+
+INSTRUCTIONS:
+- Generate a JSON response with two keys: "critical_actions" and "improvement_suggestions".
+- For "critical_actions": Tell the user exactly what specific keyword or skill section they must add. Be blunt but helpful.
+- For "improvement_suggestions": Look at the 'Reasoning' provided. Tell the user *how* to rewrite their bullet point (e.g., "Add a metric," "Mention the specific tool," "Describe the project outcome").
+- Do NOT comment on the 'Strengths'. Focus only on fixing the gaps.
+- Keep the tone professional, encouraging, and tactical.
+
+OUTPUT FORMAT (JSON ONLY):
+{{
+  "critical_actions": [
+    "Action 1...",
+    "Action 2..."
+  ],
+  "improvement_suggestions": [
+    "Suggestion 1...",
+    "Suggestion 2..."
+  ]
+}}
+""".strip()

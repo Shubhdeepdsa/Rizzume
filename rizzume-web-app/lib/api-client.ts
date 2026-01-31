@@ -214,8 +214,26 @@ export const scoringApi = {
       jd_ids: jdIds
     });
     return response.data;
+  },
+
+  estimateBatch: async (resumeIds: string[], jdIds: string[]) => {
+      const response = await api.post<BatchTokenEstimateResponse>('/api/score/estimate-batch', {
+          resume_ids: resumeIds,
+          jd_ids: jdIds
+      });
+      return response.data;
   }
 };
+
+export interface BatchTokenEstimateResponse {
+    total_tokens: number;
+    resume_count: number;
+    jd_count: number;
+    resume_tokens_sum: number;
+    jd_tokens_sum: number;
+    overhead_tokens: number;
+}
+
 
 export interface ResumeTag {
   id: string;

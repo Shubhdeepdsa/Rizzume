@@ -14,8 +14,9 @@ torch>=2.0.0
 # PDF processing
 PyMuPDF>=1.23.0
 
-# HTTP client for Ollama
+# HTTP client
 httpx>=0.25.0
+requests>=2.31.0
 
 # Utilities
 python-multipart>=0.0.6

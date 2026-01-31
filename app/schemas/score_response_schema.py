@@ -22,3 +22,12 @@ class TokenEstimateResponse(BaseModel):
     resume_text_length: int
     jd_token_estimate: int
     resume_token_estimate: int
+
+
+class BatchTokenEstimateResponse(BaseModel):
+    total_tokens: int
+    resume_count: int
+    jd_count: int
+    resume_tokens_sum: int
+    jd_tokens_sum: int
+    overhead_tokens: int
