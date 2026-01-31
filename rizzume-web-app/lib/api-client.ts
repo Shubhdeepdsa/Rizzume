@@ -177,6 +177,7 @@ export interface ScoringRecord {
   resume_id: string;
   jd_id: string;
   score: number;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
   created: string;
   expand?: {
     resume?: Resume;

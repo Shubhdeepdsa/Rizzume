@@ -45,6 +45,21 @@ export function HistoryTable({
         return "bg-red-100 text-red-800 hover:bg-red-100"
     }
 
+    const getStatusBadge = (status: string) => {
+        switch (status) {
+            case 'queued':
+                return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Queued</Badge>
+            case 'processing':
+                return <Badge variant="secondary" className="bg-blue-100 text-blue-800 hover:bg-blue-100 animate-pulse">Processing</Badge>
+            case 'failed':
+                return <Badge variant="destructive">Failed</Badge>
+            case 'completed':
+                return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Completed</Badge>
+            default:
+                return <Badge variant="outline">{status}</Badge>
+        }
+    }
+
     return (
         <div className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-4">
@@ -76,12 +91,13 @@ export function HistoryTable({
                 </div>
             </div>
 
-            <div className="rounded-md border">
+            <div className="">
                 <Table>
                     <TableHeader>
                         <TableRow>
                             <TableHead>Resume</TableHead>
                             <TableHead>Job Description</TableHead>
+                            <TableHead>Status</TableHead>
                             <TableHead>Score</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead className="w-[70px]"></TableHead>
@@ -90,7 +106,7 @@ export function HistoryTable({
                     <TableBody>
                         {data.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={5} className="h-24 text-center">
+                                <TableCell colSpan={6} className="h-24 text-center">
                                     No scoring history found.
                                 </TableCell>
                             </TableRow>
@@ -108,9 +124,16 @@ export function HistoryTable({
                                         )}
                                     </TableCell>
                                     <TableCell>
-                                        <Badge variant="secondary" className={getScoreColor(record.score)}>
-                                            {record.score.toFixed(1)} / 10
-                                        </Badge>
+                                        {getStatusBadge(record.status)}
+                                    </TableCell>
+                                    <TableCell>
+                                        {record.status === 'completed' ? (
+                                            <Badge variant="secondary" className={getScoreColor(record.score)}>
+                                                {record.score.toFixed(1)} / 10
+                                            </Badge>
+                                        ) : (
+                                            <span className="text-muted-foreground text-sm">-</span>
+                                        )}
                                     </TableCell>
                                     <TableCell>
                                         {record.created ? format(new Date(record.created), 'PP p') : 'N/A'}
@@ -120,6 +143,7 @@ export function HistoryTable({
                                             variant="ghost"
                                             size="icon"
                                             onClick={() => router.push(`/dashboard/history/${record.id}`)}
+                                            disabled={record.status !== 'completed'}
                                         >
                                             <Eye className="h-4 w-4" />
                                         </Button>
