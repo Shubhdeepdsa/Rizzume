@@ -21,10 +21,26 @@ import { Loader2, Plus } from "lucide-react"
 
 interface JDUploadDialogProps {
     onSuccess: () => void
+    open?: boolean
+    onOpenChange?: (open: boolean) => void
 }
 
-export function JDUploadDialog({ onSuccess }: JDUploadDialogProps) {
-    const [open, setOpen] = useState(false)
+export function JDUploadDialog({ onSuccess, open: constrainedOpen, onOpenChange }: JDUploadDialogProps) {
+    const [internalOpen, setInternalOpen] = useState(false)
+
+    // Derived state to handle both controlled and uncontrolled modes
+    // If constrainedOpen is provided, use it. Otherwise use internalOpen.
+    const isOpen = constrainedOpen !== undefined ? constrainedOpen : internalOpen
+
+    // Helper to change state
+    const setOpen = (newOpen: boolean) => {
+        if (onOpenChange) {
+            onOpenChange(newOpen)
+        } else {
+            setInternalOpen(newOpen)
+        }
+    }
+
     const [isLoading, setIsLoading] = useState(false)
     const [text, setText] = useState("")
     const [file, setFile] = useState<File | null>(null)
@@ -89,13 +105,15 @@ export function JDUploadDialog({ onSuccess }: JDUploadDialogProps) {
     }
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <Button>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Job Description
-                </Button>
-            </DialogTrigger>
+        <Dialog open={isOpen} onOpenChange={setOpen}>
+            {!onOpenChange && (
+                <DialogTrigger asChild>
+                    <Button>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Job Description
+                    </Button>
+                </DialogTrigger>
+            )}
             <DialogContent className="sm:max-w-[525px]">
                 <DialogHeader>
                     <DialogTitle>Add Job Description</DialogTitle>

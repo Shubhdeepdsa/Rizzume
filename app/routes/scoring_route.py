@@ -21,7 +21,8 @@ from app.validator.normalize import normalize_score_input
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+
+router = APIRouter(prefix="/api")
 
 
 @router.get("/score/health")

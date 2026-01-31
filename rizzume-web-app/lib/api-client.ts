@@ -183,6 +183,7 @@ export interface ScoringRecord {
     jd?: JobDescription;
   };
   result?: any;
+  analysis?: any;
 }
 
 export const scoringApi = {
@@ -198,6 +199,14 @@ export const scoringApi = {
   
   getDetail: async (id: string) => {
     const response = await api.get<ScoringRecord>(`/api/results/${id}`);
+    return response.data;
+  },
+
+  batchScore: async (resumeIds: string[], jdIds: string[]) => {
+    const response = await api.post('/api/batch-score', {
+      resume_ids: resumeIds,
+      jd_ids: jdIds
+    });
     return response.data;
   }
 };

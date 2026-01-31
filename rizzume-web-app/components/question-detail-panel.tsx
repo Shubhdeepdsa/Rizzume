@@ -11,6 +11,14 @@ interface QuestionDetailPanelProps {
 }
 
 export function QuestionDetailPanel({ question, resumeText }: QuestionDetailPanelProps) {
+  if (!question) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        No question data available.
+      </div>
+    )
+  }
+
   const [activeTab, setActiveTab] = useState<"reasoning" | "evidence" | "resume">("reasoning")
 
   const getAnswerColor = (answer: string) => {
@@ -52,11 +60,10 @@ export function QuestionDetailPanel({ question, resumeText }: QuestionDetailPane
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === tab
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab
                 ? "border-primary text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
+              }`}
           >
             {tab === "reasoning" ? "Reasoning" : tab === "evidence" ? "Evidence from resume" : "Resume highlights"}
           </button>

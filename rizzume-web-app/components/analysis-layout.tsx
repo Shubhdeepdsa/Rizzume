@@ -17,19 +17,26 @@ export function AnalysisLayout({ result, resumeText }: AnalysisLayoutProps) {
   const [selectedQuestionId, setSelectedQuestionId] = useState(0)
 
   const categories = useMemo(() => {
-    return {
+    console.log("DEBUG: AnalysisLayout received result:", result)
+    const stats = {
       education: result.questions.filter((q) => q.category === "education").length,
       experience: result.questions.filter((q) => q.category === "experience").length,
       technical_skills: result.questions.filter((q) => q.category === "technical_skills").length,
       soft_skills: result.questions.filter((q) => q.category === "soft_skills").length,
       mandatory: result.questions.filter((q) => q.is_mandatory).length,
     }
+    console.log("DEBUG: Computed categories stats:", stats)
+    return stats
   }, [result.questions])
 
   const filteredQuestions = useMemo(() => {
-    if (selectedFilter === "all") return result.questions
-    if (selectedFilter === "mandatory") return result.questions.filter((q) => q.is_mandatory)
-    return result.questions.filter((q) => q.category === selectedFilter)
+    let filtered = []
+    if (selectedFilter === "all") filtered = result.questions
+    else if (selectedFilter === "mandatory") filtered = result.questions.filter((q) => q.is_mandatory)
+    else filtered = result.questions.filter((q) => q.category === selectedFilter)
+
+    console.log(`DEBUG: Filtered questions (filter=${selectedFilter}):`, filtered)
+    return filtered
   }, [result.questions, selectedFilter])
 
   const chartData = useMemo(() => {
@@ -114,7 +121,13 @@ export function AnalysisLayout({ result, resumeText }: AnalysisLayoutProps) {
 
           {/* Right column - Detail view */}
           <div className="lg:col-span-3 max-h-[calc(100vh-200px)] overflow-y-auto">
-            <QuestionDetailPanel question={selectedQuestion} resumeText={resumeText} />
+            {selectedQuestion ? (
+              <QuestionDetailPanel question={selectedQuestion} resumeText={resumeText} />
+            ) : (
+              <div className="flex h-full items-center justify-center p-8 text-muted-foreground border rounded-lg bg-card/50 border-dashed">
+                <p>Select a question to view details</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -12,7 +12,7 @@ export default function DashboardLayout({
             <DashboardSidebar />
 
             {/* Main Content */}
-            <main className="flex-1 md:ml-64 p-8 pt-16 md:pt-8 min-h-screen transition-all duration-300 ease-in-out">
+            <main className="flex-1 md:ml-72 p-8 pt-16 md:pt-8 min-h-screen transition-all duration-300 ease-in-out">
                 {children}
             </main>
         </div>
