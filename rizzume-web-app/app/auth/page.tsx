@@ -19,7 +19,7 @@ function AuthContent() {
   // Reverse Protection: Redirect to Home if logged in
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace("/home");
+      router.replace("/dashboard");
     }
   }, [isAuthenticated, isLoading, router]);
 
@@ -42,26 +42,10 @@ function AuthContent() {
     description = "Enter your email below to create your account";
     component = <SignupForm />;
   } else if (view === "forgot-password") {
-    title = "Forgot Password"; // Managed inside component mostly, but header can change
+    title = "Forgot Password";
     description = "Recover your account";
-    // The ForgotPasswordForm has its own Header, maybe I should remove CardHeader/Title wrap?
-    // Let's keep it consistent.
     component = <ForgotPasswordForm />;
   }
-
-  // Special Handling: ForgotPasswordForm has its own header internaly in my implementation?
-  // Let's check. Yes `ForgotPasswordForm` has a h1.
-  // `LoginForm` and `SignupForm` do NOT have headers.
-  // So for `forgot-password`, I should probably NOT render the CardHeader from here, or adjust the Component.
-  // Actually, standardizing is better. I'll stick to the Card wrapper.
-  // Let me adjust `ForgotPasswordForm` to NOT have the header if I wrap it here, OR 
-  // I custom render here.
-
-  // Refined approach:
-  // Render CardHeader for Login/Signup. 
-  // ForgotPassword includes its own header/alert logic so passing "wrapper" might be cleaner.
-  // Let's just strip the header from `ForgotPasswordForm` in my previous step? 
-  // Too late, already wrote it. I'll just conditionally render Header here.
 
   const showHeader = view !== "forgot-password";
 

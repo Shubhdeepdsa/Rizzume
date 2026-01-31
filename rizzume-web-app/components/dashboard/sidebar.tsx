@@ -10,6 +10,7 @@ import { Menu, FileText, Upload, History, LayoutDashboard, LogOut, Home, Command
 import { useState } from "react"
 import { useAuth } from "@/context/auth-context"
 
+import { ThemeToggle } from "@/components/theme-toggle"
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> { }
 
 export function DashboardSidebar({ className }: SidebarProps) {
@@ -91,6 +92,9 @@ export function DashboardSidebar({ className }: SidebarProps) {
                         <span className="text-xs text-muted-foreground truncate w-32">
                             {user?.email}
                         </span>
+                    </div>
+                    <div className="ml-auto">
+                        <ThemeToggle />
                     </div>
                 </div>
                 <Link href="/home" onClick={() => setOpen(false)}>

@@ -5,6 +5,7 @@ import { useAuth } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText, LayoutDashboard, LogOut } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 import Link from "next/link";
 
 function HomeContent() {
@@ -23,6 +24,8 @@ function HomeContent() {
           <span className="text-sm text-muted-foreground hidden sm:inline-block">
             {user?.email}
           </span>
+          <ThemeToggle />
+
           <Button variant="ghost" size="sm" onClick={logout}>
             <LogOut className="mr-2 h-4 w-4" />
             Logout
@@ -43,7 +46,7 @@ function HomeContent() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-7xl">
           {/* Action 1: Start Scoring */}
-          <Link href="/score" className="group">
+          <Link href="/dashboard/score" className="group">
             <Card className="h-full transition-all hover:border-primary hover:shadow-md">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-2xl group-hover:text-primary">

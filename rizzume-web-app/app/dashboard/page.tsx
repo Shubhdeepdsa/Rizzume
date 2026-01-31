@@ -5,6 +5,9 @@ export default function DashboardPage() {
             <p className="text-muted-foreground">
                 Welcome to your Rizzume dashboard. Use the sidebar to manage your resumes, job descriptions, and view score history.
             </p>
+            <p className="text-muted-foreground">
+                Data Insights will be Added Later on Right Now we are just focusing on the Making the Product Usable and Stable
+            </p>
         </div>
     )
 }

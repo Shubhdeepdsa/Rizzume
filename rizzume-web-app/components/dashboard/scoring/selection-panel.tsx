@@ -223,7 +223,7 @@ export function SelectionPanel({ type, selectedIds, onSelectionChange }: Selecti
                     <Button
                         size="sm"
                         variant="ghost"
-                        className="self-start px-0 h-auto text-muted-foreground hover:text-foreground"
+                        className="self-start px-2 py-1 h-auto text-muted-foreground hover:text-foreground"
                         onClick={toggleAll}
                     >
                         {selectedIds.length === items.length && items.length > 0 ? "Deselect All" : "Select All"}
@@ -244,7 +244,7 @@ export function SelectionPanel({ type, selectedIds, onSelectionChange }: Selecti
                                 <div
                                     key={item.id}
                                     className={cn(
-                                        "flex items-start space-x-3 p-3 rounded-lg border cursor-pointer transition-colors hover:bg-accent",
+                                        "flex items-start space-x-3 p-3 rounded-lg  cursor-pointer shadow-sm border border-black/10 transition-colors hover:bg-accent",
                                         selectedIds.includes(item.id) ? "bg-accent border-primary" : "bg-card"
                                     )}
                                     onClick={() => toggleSelection(item.id)}
