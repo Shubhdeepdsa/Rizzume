@@ -16,33 +16,48 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MoreHorizontal, Download, Trash2, FileText, Eye } from "lucide-react"
+import { MoreHorizontal, Download, Trash2, FileText, Eye, Filter, Calendar as CalendarIcon, Check, X } from "lucide-react"
 import {
     Dialog,
     DialogContent,
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
-import { JobDescription, jdsApi, JDTag, jdTagsApi } from "@/lib/api-client"
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from "@/components/ui/command"
+import { Calendar } from "@/components/ui/calendar"
+import { Input } from "@/components/ui/input"
+import { JobDescription, jdsApi, JDTag, jdTagsApi, JDFilter } from "@/lib/api-client"
 import { format } from "date-fns"
 import { useState, useEffect } from "react"
 import { useToast } from "@/components/ui/use-toast"
+import { cn } from "@/lib/utils"
 
 interface JDTableProps {
     data: JobDescription[]
     onRefresh: () => void
+    filters: JDFilter
+    onFilterChange: (filters: JDFilter) => void
+    availableTags: JDTag[]
+    availableCompanies: string[]
 }
 
-export function JDTable({ data, onRefresh }: JDTableProps) {
+export function JDTable({ data, onRefresh, filters, onFilterChange, availableTags, availableCompanies }: JDTableProps) {
     const { toast } = useToast()
     const [deletingId, setDeletingId] = useState<string | null>(null)
     const [viewingJD, setViewingJD] = useState<JobDescription | null>(null)
     const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-    const [jdTags, setJdTags] = useState<JDTag[]>([])
-
-    useEffect(() => {
-        fetchTags()
-    }, [])
 
     // Handle Preview URL creation/cleanup
     useEffect(() => {
@@ -63,16 +78,7 @@ export function JDTable({ data, onRefresh }: JDTableProps) {
         }
     }, [viewingJD])
 
-    const fetchTags = async () => {
-        try {
-            const tags = await jdTagsApi.getAll()
-            setJdTags(tags)
-        } catch (e) {
-            console.error("Failed to fetch JD tags", e)
-        }
-    }
-
-    const tagMap = jdTags.reduce((acc, tag) => {
+    const tagMap = availableTags.reduce((acc, tag) => {
         acc[tag.id] = tag.label
         return acc
     }, {} as Record<string, string>)
@@ -126,9 +132,176 @@ export function JDTable({ data, onRefresh }: JDTableProps) {
                     <TableHeader>
                         <TableRow>
                             <TableHead>Role</TableHead>
-                            <TableHead>Company</TableHead>
-                            <TableHead>Date Added</TableHead>
-                            <TableHead>Tags</TableHead>
+                            <TableHead>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className={cn(
+                                                "-ml-3 h-8 data-[state=open]:bg-accent",
+                                                filters.company_contains && "text-primary"
+                                            )}
+                                        >
+                                            Company
+                                            <Filter className="ml-2 h-4 w-4" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[200px] p-0" align="start">
+                                        <Command>
+                                            <CommandInput placeholder="Filter company..." />
+                                            <CommandList>
+                                                <CommandEmpty>No company found.</CommandEmpty>
+                                                <CommandGroup>
+                                                    {availableCompanies.map((company) => {
+                                                        const isSelected = filters.company_contains === company
+                                                        return (
+                                                            <CommandItem
+                                                                key={company}
+                                                                onSelect={() => {
+                                                                    onFilterChange({
+                                                                        ...filters,
+                                                                        company_contains: isSelected ? undefined : company
+                                                                    })
+                                                                }}
+                                                            >
+                                                                <div
+                                                                    className={cn(
+                                                                        "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                                                                        isSelected
+                                                                            ? "bg-primary text-primary-foreground"
+                                                                            : "opacity-50 [&_svg]:invisible"
+                                                                    )}
+                                                                >
+                                                                    <Check className="h-4 w-4" />
+                                                                </div>
+                                                                {company}
+                                                            </CommandItem>
+                                                        )
+                                                    })}
+                                                </CommandGroup>
+                                                {filters.company_contains && (
+                                                    <CommandGroup>
+                                                        <CommandItem
+                                                            onSelect={() => onFilterChange({ ...filters, company_contains: undefined })}
+                                                            className="justify-center text-center"
+                                                        >
+                                                            Clear Filter
+                                                        </CommandItem>
+                                                    </CommandGroup>
+                                                )}
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                            </TableHead>
+                            <TableHead>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className={cn(
+                                                "-ml-3 h-8 data-[state=open]:bg-accent",
+                                                (filters.created_after || filters.created_before) && "text-primary"
+                                            )}
+                                        >
+                                            Date Added
+                                            <CalendarIcon className="ml-2 h-4 w-4" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0" align="start">
+                                        <Calendar
+                                            mode="single"
+                                            selected={filters.created_after ? new Date(filters.created_after) : undefined}
+                                            onSelect={(date) => {
+                                                if (date) {
+                                                    const start = new Date(date)
+                                                    start.setHours(0, 0, 0, 0)
+                                                    const end = new Date(date)
+                                                    end.setHours(23, 59, 59, 999)
+                                                    onFilterChange({
+                                                        ...filters,
+                                                        created_after: start.toISOString(),
+                                                        created_before: end.toISOString()
+                                                    })
+                                                } else {
+                                                    onFilterChange({
+                                                        ...filters,
+                                                        created_after: undefined,
+                                                        created_before: undefined
+                                                    })
+                                                }
+                                            }}
+                                            initialFocus
+                                        />
+                                    </PopoverContent>
+                                </Popover>
+                            </TableHead>
+                            <TableHead>
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className={cn(
+                                                "-ml-3 h-8 data-[state=open]:bg-accent",
+                                                (filters.tags && filters.tags.length > 0) && "text-primary"
+                                            )}
+                                        >
+                                            Tags
+                                            <Filter className="ml-2 h-4 w-4" />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[200px] p-0" align="start">
+                                        <Command>
+                                            <CommandInput placeholder="Filter tags..." />
+                                            <CommandList>
+                                                <CommandEmpty>No tags found.</CommandEmpty>
+                                                <CommandGroup>
+                                                    {availableTags.map((tag) => {
+                                                        const isSelected = filters.tags?.includes(tag.id)
+                                                        return (
+                                                            <CommandItem
+                                                                key={tag.id}
+                                                                onSelect={() => {
+                                                                    const current = filters.tags || []
+                                                                    const next = current.includes(tag.id)
+                                                                        ? current.filter(id => id !== tag.id)
+                                                                        : [...current, tag.id]
+                                                                    onFilterChange({ ...filters, tags: next })
+                                                                }}
+                                                            >
+                                                                <div
+                                                                    className={cn(
+                                                                        "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                                                                        isSelected
+                                                                            ? "bg-primary text-primary-foreground"
+                                                                            : "opacity-50 [&_svg]:invisible"
+                                                                    )}
+                                                                >
+                                                                    <Check className="h-4 w-4" />
+                                                                </div>
+                                                                {tag.label}
+                                                            </CommandItem>
+                                                        )
+                                                    })}
+                                                </CommandGroup>
+                                                {(filters.tags && filters.tags.length > 0) && (
+                                                    <CommandGroup>
+                                                        <CommandItem
+                                                            onSelect={() => onFilterChange({ ...filters, tags: undefined })}
+                                                            className="justify-center text-center"
+                                                        >
+                                                            Clear Filters
+                                                        </CommandItem>
+                                                    </CommandGroup>
+                                                )}
+                                            </CommandList>
+                                        </Command>
+                                    </PopoverContent>
+                                </Popover>
+                            </TableHead>
                             <TableHead className="w-[70px]"></TableHead>
                         </TableRow>
                     </TableHeader>

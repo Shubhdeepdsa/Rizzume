@@ -135,6 +135,11 @@ export const jdsApi = {
     const response = await api.post<JobDescription[]>('/api/jds/search', filter);
     return response.data;
   },
+
+  getCompanies: async () => {
+    const response = await api.get<string[]>('/api/jds/companies');
+    return response.data;
+  },
   
   create: async (formData: FormData) => {
     const response = await api.post<JobDescription>('/api/jds', formData, {

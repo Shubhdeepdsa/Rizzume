@@ -152,6 +152,18 @@ async def search_jds(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/companies")
+async def get_companies(
+    user: dict = Depends(get_current_user),
+    token: str = Depends(get_current_user_token),
+    pb: PocketBaseService = Depends(get_pocketbase_service),
+):
+    try:
+        companies = await pb.get_unique_companies(token, user["id"])
+        return companies
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/{jd_id}/download")
 async def download_jd(
     jd_id: str,

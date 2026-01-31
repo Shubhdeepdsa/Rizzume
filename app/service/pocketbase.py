@@ -743,6 +743,32 @@ class PocketBaseService:
         self._handle_error(resp, "search_jds")
         return resp.json().get("items", [])
 
+    async def get_unique_companies(self, token: str, user_id: str) -> List[str]:
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        # We need to fetch all JDs for the user to extract unique companies.
+        # PocketBase doesn't have a "distinct" API yet.
+        filters = f'user="{user_id}"'
+        
+        # Fetching all records (up to reasonable limit, e.g. 500).
+        # Optimization: use "fields" param if supported/needed, but standard listing is fine.
+        resp = await self.client.get(
+            "/api/collections/job_descriptions/records",
+            headers=headers,
+            params={"filter": filters, "perPage": 500, "fields": "company_name"}
+        )
+        self._handle_error(resp, "get_unique_companies")
+        
+        items = resp.json().get("items", [])
+        
+        unique_companies = set()
+        for item in items:
+            name = item.get("company_name", "").strip()
+            if name:
+                unique_companies.add(name)
+        
+        return sorted(list(unique_companies))
+
     async def get_file_stream(self, token: str, collection: str, record_id: str, filename: str) -> httpx.Response:
         """
         Initiates a stream request to PocketBase for a file.
