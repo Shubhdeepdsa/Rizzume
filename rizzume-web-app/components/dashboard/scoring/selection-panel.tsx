@@ -244,8 +244,8 @@ export function SelectionPanel({ type, selectedIds, onSelectionChange }: Selecti
                                 <div
                                     key={item.id}
                                     className={cn(
-                                        "flex items-start space-x-3 p-3 rounded-lg  cursor-pointer shadow-sm border border-black/10 transition-colors hover:bg-accent",
-                                        selectedIds.includes(item.id) ? "bg-accent border-primary" : "bg-card"
+                                        "group flex items-start space-x-3 p-3 rounded-lg cursor-pointer shadow-sm border border-black/10 transition-colors hover:bg-accent hover:text-accent-foreground",
+                                        selectedIds.includes(item.id) ? "bg-accent border-primary text-accent-foreground" : "bg-card"
                                     )}
                                     onClick={() => toggleSelection(item.id)}
                                 >
@@ -260,12 +260,12 @@ export function SelectionPanel({ type, selectedIds, onSelectionChange }: Selecti
                                         <div className="flex flex-wrap gap-1 mt-1">
                                             {item.tags && item.tags.length > 0 ? (
                                                 item.tags.map(tagId => (
-                                                    <Badge key={tagId} variant="outline" className="text-[10px] px-1 py-0 h-5">
+                                                    <Badge key={tagId} variant="outline" className={cn("text-[10px] px-1 py-0 h-5", selectedIds.includes(item.id) ? "text-accent-foreground" : "group-hover:text-accent-foreground")}>
                                                         {tagMap[tagId] || "Tag"}
                                                     </Badge>
                                                 ))
                                             ) : (
-                                                <span className="text-xs text-muted-foreground">No tags</span>
+                                                <span className={cn("text-xs text-muted-foreground", selectedIds.includes(item.id) ? "text-accent-foreground" : "group-hover:text-accent-foreground")}>No tags</span>
                                             )}
                                         </div>
                                     </div>
