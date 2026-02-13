@@ -35,6 +35,8 @@ from app.routes.resume_tags import router as resume_tags_router
 app.include_router(resume_tags_router)
 from app.routes.jd_tags import router as jd_tags_router
 app.include_router(jd_tags_router)
+from app.routes.scoring_config_route import router as scoring_configs_router
+app.include_router(scoring_configs_router)
 
 
 @app.on_event("startup")

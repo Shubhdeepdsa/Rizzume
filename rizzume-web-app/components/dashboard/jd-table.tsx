@@ -16,7 +16,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MoreHorizontal, Download, Trash2, FileText, Eye, Filter, Calendar as CalendarIcon, Check, X } from "lucide-react"
+import { MoreHorizontal, Download, Trash2, FileText, Eye, Filter, Calendar as CalendarIcon, Check, X, Settings2, RefreshCw } from "lucide-react"
 import {
     Dialog,
     DialogContent,
@@ -38,11 +38,14 @@ import {
 } from "@/components/ui/command"
 import { Calendar } from "@/components/ui/calendar"
 import { Input } from "@/components/ui/input"
-import { JobDescription, jdsApi, JDTag, jdTagsApi, JDFilter } from "@/lib/api-client"
+import { JobDescription, jdsApi, JDTag, jdTagsApi, JDFilter, ScoringConfig, scoringConfigApi } from "@/lib/api-client"
 import { format } from "date-fns"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useToast } from "@/components/ui/use-toast"
 import { cn } from "@/lib/utils"
+import { ScoringConfigDialog } from "./scoring/scoring-config-dialog"
+import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
+import { toast as sonnerToast } from "sonner"
 
 interface JDTableProps {
     data: JobDescription[]
@@ -58,6 +61,23 @@ export function JDTable({ data, onRefresh, filters, onFilterChange, availableTag
     const [deletingId, setDeletingId] = useState<string | null>(null)
     const [viewingJD, setViewingJD] = useState<JobDescription | null>(null)
     const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+    // Scoring config state
+    const [configDialogOpen, setConfigDialogOpen] = useState(false)
+    const [editingConfig, setEditingConfig] = useState<ScoringConfig | null>(null)
+    const [scoringConfigs, setScoringConfigs] = useState<ScoringConfig[]>([])
+    const [assigningJdId, setAssigningJdId] = useState<string | null>(null)
+
+    // Fetch configs list
+    const loadConfigs = useCallback(async () => {
+        try {
+            const configs = await scoringConfigApi.getAll()
+            setScoringConfigs(configs)
+        } catch (e) {
+            console.error("Failed to load scoring configs", e)
+        }
+    }, [])
+
+    useEffect(() => { loadConfigs() }, [loadConfigs])
 
     // Handle Preview URL creation/cleanup
     useEffect(() => {
@@ -124,6 +144,39 @@ export function JDTable({ data, onRefresh, filters, onFilterChange, availableTag
             setDeletingId(null)
         }
     }
+
+    const handleAssignConfig = async (jdId: string, configId: string) => {
+        try {
+            const result = await scoringConfigApi.assignToJd(configId, jdId)
+            sonnerToast.success(
+                result.affected_count > 0
+                    ? `Config assigned. Recalculating ${result.affected_count} scores...`
+                    : 'Config assigned'
+            )
+            onRefresh()
+        } catch (e) {
+            sonnerToast.error('Failed to assign config')
+        }
+    }
+
+    const handleRecalculate = async (jdId: string) => {
+        try {
+            const result = await scoringConfigApi.recalculateJd(jdId)
+            sonnerToast.success(
+                result.affected_count > 0
+                    ? `Recalculating ${result.affected_count} scores...`
+                    : 'No completed scores to recalculate'
+            )
+        } catch (e) {
+            sonnerToast.error('Failed to start recalculation')
+        }
+    }
+
+    // Build config name map
+    const configMap = scoringConfigs.reduce((acc, cfg) => {
+        acc[cfg.id] = cfg.name
+        return acc
+    }, {} as Record<string, string>)
 
     return (
         <>
@@ -356,6 +409,41 @@ export function JDTable({ data, onRefresh, filters, onFilterChange, availableTag
                                                     <Download className="mr-2 h-4 w-4" />
                                                     Download
                                                 </DropdownMenuItem>
+                                                <DropdownMenuSeparator />
+                                                {/* Scoring Config Sub-menu */}
+                                                <DropdownMenuItem
+                                                    onClick={() => {
+                                                        setAssigningJdId(jd.id)
+                                                        setConfigDialogOpen(true)
+                                                        setEditingConfig(null)
+                                                    }}
+                                                >
+                                                    <Settings2 className="mr-2 h-4 w-4" />
+                                                    New Scoring Config
+                                                </DropdownMenuItem>
+                                                {scoringConfigs.length > 0 && (
+                                                    <>
+                                                        {scoringConfigs.slice(0, 5).map(cfg => (
+                                                            <DropdownMenuItem
+                                                                key={cfg.id}
+                                                                onClick={() => handleAssignConfig(jd.id, cfg.id)}
+                                                                className="pl-8"
+                                                            >
+                                                                {jd.scoring_config === cfg.id && (
+                                                                    <Check className="mr-2 h-3 w-3" />
+                                                                )}
+                                                                <span className="truncate">{cfg.name}</span>
+                                                            </DropdownMenuItem>
+                                                        ))}
+                                                    </>
+                                                )}
+                                                <DropdownMenuItem
+                                                    onClick={() => handleRecalculate(jd.id)}
+                                                >
+                                                    <RefreshCw className="mr-2 h-4 w-4" />
+                                                    Recalculate Scores
+                                                </DropdownMenuItem>
+                                                <DropdownMenuSeparator />
                                                 <DropdownMenuItem
                                                     onClick={() => handleDelete(jd.id)}
                                                     className="text-destructive focus:text-destructive"
@@ -390,6 +478,21 @@ export function JDTable({ data, onRefresh, filters, onFilterChange, availableTag
                     </div>
                 </DialogContent>
             </Dialog>
+
+            {/* Scoring Config Dialog */}
+            <ScoringConfigDialog
+                open={configDialogOpen}
+                onOpenChange={setConfigDialogOpen}
+                config={editingConfig}
+                onSaved={async (saved) => {
+                    await loadConfigs()
+                    // Auto-assign to JD if we were assigning
+                    if (assigningJdId) {
+                        await handleAssignConfig(assigningJdId, saved.id)
+                        setAssigningJdId(null)
+                    }
+                }}
+            />
         </>
     )
 }

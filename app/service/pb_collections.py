@@ -160,8 +160,8 @@ def get_resumes_schema(users_collection_id: str = "_pb_users_auth_", tags_collec
         "deleteRule": "user = @request.auth.id",
     }
 
-def get_jds_schema(users_collection_id: str = "_pb_users_auth_", tags_collection_id: str = "jd_tags") -> Dict[str, Any]:
-    return {
+def get_jds_schema(users_collection_id: str = "_pb_users_auth_", tags_collection_id: str = "jd_tags", scoring_configs_collection_id: str = "") -> Dict[str, Any]:
+    schema = {
         "name": "job_descriptions",
         "type": "base",
         "fields": [
@@ -258,6 +258,17 @@ def get_jds_schema(users_collection_id: str = "_pb_users_auth_", tags_collection
         "updateRule": "user = @request.auth.id",
         "deleteRule": "user = @request.auth.id",
     }
+    # Add scoring_config relation if collection ID is known
+    if scoring_configs_collection_id:
+        schema["fields"].insert(-2, {
+            "name": "scoring_config",
+            "type": "relation",
+            "required": False,
+            "collectionId": scoring_configs_collection_id,
+            "cascadeDelete": False,
+            "maxSelect": 1,
+        })
+    return schema
     
 def get_scoring_results_schema(resume_collection_id: str, jd_collection_id: str, users_collection_id: str = "_pb_users_auth_") -> Dict[str, Any]:
     return {
@@ -305,7 +316,7 @@ def get_scoring_results_schema(resume_collection_id: str, jd_collection_id: str,
                 "type": "select",
                 "required": True,
                 "maxSelect": 1,
-                "values": ["queued", "processing", "completed", "failed"],
+                "values": ["queued", "processing", "completed", "failed", "recalculating"],
             },
             {
                 "name": "created",
@@ -325,4 +336,141 @@ def get_scoring_results_schema(resume_collection_id: str, jd_collection_id: str,
         "createRule": "@request.auth.id != '' && user = @request.auth.id", 
         "updateRule": "", 
         "deleteRule": "user = @request.auth.id",
+    }
+
+def get_scoring_configs_schema(users_collection_id: str = "_pb_users_auth_") -> Dict[str, Any]:
+    return {
+        "name": "scoring_configs",
+        "type": "base",
+        "fields": [
+            {
+                "name": "user",
+                "type": "relation",
+                "required": True,
+                "collectionId": users_collection_id,
+                "cascadeDelete": False,
+                "maxSelect": 1,
+            },
+            {
+                "name": "name",
+                "type": "text",
+                "required": True,
+            },
+            {
+                "name": "education_weight",
+                "type": "number",
+                "required": False,
+                "min": 0,
+                "max": 100,
+            },
+            {
+                "name": "experience_weight",
+                "type": "number",
+                "required": False,
+                "min": 0,
+                "max": 100,
+            },
+            {
+                "name": "technical_weight",
+                "type": "number",
+                "required": False,
+                "min": 0,
+                "max": 100,
+            },
+            {
+                "name": "soft_skills_weight",
+                "type": "number",
+                "required": False,
+                "min": 0,
+                "max": 100,
+            },
+            {
+                "name": "mandatory_question_weight",
+                "type": "number",
+                "required": False,
+            },
+            {
+                "name": "optional_question_weight",
+                "type": "number",
+                "required": False,
+            },
+            {
+                "name": "mandatory_cap_weight",
+                "type": "number",
+                "required": False,
+                "min": 0,
+                "max": 1,
+            },
+            {
+                "name": "is_default",
+                "type": "bool",
+                "required": False,
+            },
+            {
+                "name": "created",
+                "type": "autodate",
+                "onCreate": True,
+                "onUpdate": False,
+            },
+            {
+                "name": "updated",
+                "type": "autodate",
+                "onCreate": True,
+                "onUpdate": True,
+            }
+        ],
+        "listRule": "user = @request.auth.id",
+        "viewRule": "user = @request.auth.id",
+        "createRule": "@request.auth.id != '' && user = @request.auth.id",
+        "updateRule": "user = @request.auth.id",
+        "deleteRule": "user = @request.auth.id",
+    }
+
+def get_score_config_history_schema(
+    scoring_results_collection_id: str,
+    scoring_configs_collection_id: str,
+) -> Dict[str, Any]:
+    return {
+        "name": "score_config_history",
+        "type": "base",
+        "fields": [
+            {
+                "name": "scoring_result",
+                "type": "relation",
+                "required": True,
+                "collectionId": scoring_results_collection_id,
+                "cascadeDelete": True,
+                "maxSelect": 1,
+            },
+            {
+                "name": "scoring_config",
+                "type": "relation",
+                "required": True,
+                "collectionId": scoring_configs_collection_id,
+                "cascadeDelete": False,
+                "maxSelect": 1,
+            },
+            {
+                "name": "config_snapshot",
+                "type": "json",
+                "required": True,
+            },
+            {
+                "name": "created",
+                "type": "autodate",
+                "onCreate": True,
+                "onUpdate": False,
+            },
+            {
+                "name": "updated",
+                "type": "autodate",
+                "onCreate": True,
+                "onUpdate": True,
+            }
+        ],
+        "listRule": "",
+        "viewRule": "",
+        "createRule": "",
+        "updateRule": "",
+        "deleteRule": "",
     }

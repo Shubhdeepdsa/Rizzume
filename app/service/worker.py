@@ -128,6 +128,15 @@ async def process_scoring_queue():
                 q_json = json.loads(q_json)
                 
             jd_questions = JDQuestions.model_validate(q_json)
+
+            # Fetch JD's scoring config (if assigned)
+            scoring_config = None
+            config_id = jd_record.get("scoring_config")
+            if config_id:
+                try:
+                    scoring_config = await pb.get_scoring_config(token, config_id)
+                except Exception:
+                    logger.warning(f"[Worker] Could not fetch scoring_config {config_id} for job {job_id}. Using defaults.")
             
             # 3. Score
             result = await run_in_threadpool(
@@ -135,7 +144,8 @@ async def process_scoring_queue():
                 jd_questions,
                 resume_record.get("original_text", ""),
                 3,
-                precomputed
+                precomputed,
+                scoring_config,
             )
             
             # 4. Save
@@ -147,6 +157,24 @@ async def process_scoring_queue():
                 score=result.average_score, 
                 analysis=analysis_dict
             )
+
+            # 5. Record config history (audit trail)
+            if scoring_config and config_id:
+                try:
+                    config_snapshot = {
+                        k: scoring_config.get(k) for k in [
+                            "name", "education_weight", "experience_weight",
+                            "technical_weight", "soft_skills_weight",
+                            "mandatory_question_weight", "optional_question_weight",
+                            "mandatory_cap_weight",
+                        ]
+                    }
+                    await pb.create_score_config_history(
+                        token, job_id, config_id, config_snapshot
+                    )
+                except Exception as e:
+                    logger.warning(f"[Worker] Failed to record config history for {job_id}: {e}")
+
             logger.info(f"✅ [Worker] Job {job_id} completed. Score: {result.average_score}")
 
         except Exception as e:

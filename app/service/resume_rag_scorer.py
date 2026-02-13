@@ -38,6 +38,7 @@ def score_resume_with_rag(
     resume_text: str,
     top_k: int = 3,
     precomputed_index: Optional[Tuple[List[TextChunk], np.ndarray]] = None,
+    scoring_config: Optional[Dict] = None,
 ) -> ResumeRagResult:
     """
     Main high-level API:
@@ -109,12 +110,28 @@ def score_resume_with_rag(
     process_category("soft_skills", jd_questions.soft_skills[:max_q])
 
     # Compute final score using weighted average with mandatory cap
-    avg_score = _compute_final_score(
-        all_scored,
-        settings.mandatory_question_weight,
-        settings.optional_question_weight,
-        settings.mandatory_cap_weight,
-    )
+    # Use scoring_config if provided, otherwise fall back to global settings
+    if scoring_config:
+        category_weights = {
+            "education": scoring_config.get("education_weight", 25),
+            "experience": scoring_config.get("experience_weight", 25),
+            "technical_skills": scoring_config.get("technical_weight", 25),
+            "soft_skills": scoring_config.get("soft_skills_weight", 25),
+        }
+        avg_score = _compute_final_score(
+            all_scored,
+            scoring_config.get("mandatory_question_weight", settings.mandatory_question_weight),
+            scoring_config.get("optional_question_weight", settings.optional_question_weight),
+            scoring_config.get("mandatory_cap_weight", settings.mandatory_cap_weight),
+            category_weights,
+        )
+    else:
+        avg_score = _compute_final_score(
+            all_scored,
+            settings.mandatory_question_weight,
+            settings.optional_question_weight,
+            settings.mandatory_cap_weight,
+        )
 
     # Generate Action Plan using the scored questions
     action_plan = _generate_action_plan(all_scored)
@@ -237,31 +254,25 @@ def _score_single_question_with_rag(
     )
 
 
-def _compute_final_score(
+def _compute_category_score(
     questions: List[ScoredQuestion],
     mandatory_weight: float,
     optional_weight: float,
-    mandatory_cap_weight: float
+    mandatory_cap_weight: float,
 ) -> float:
     """
-    Compute weighted average with penalty applied ONLY to mandatory questions.
-    
-    This ensures:
-    - Mandatory questions get 2x weight
-    - If mandatory avg < 5.0, penalty applies ONLY to mandatory portion
-    - Optional questions are unaffected by mandatory performance
+    Compute weighted score for a single category's questions.
+    Applies mandatory/optional weighting and mandatory cap penalty.
     """
     if not questions:
         return 0.0
-    
-    # Separate mandatory and optional calculations
+
     mandatory_weighted_score = 0.0
     mandatory_total_weight = 0.0
     optional_weighted_score = 0.0
     optional_total_weight = 0.0
-    
     mandatory_scores = []
-    
+
     for q in questions:
         if q.is_mandatory:
             mandatory_weighted_score += q.score * mandatory_weight
@@ -270,33 +281,138 @@ def _compute_final_score(
         else:
             optional_weighted_score += q.score * optional_weight
             optional_total_weight += optional_weight
-    
-    # Calculate mandatory average
+
+    # Mandatory average with cap penalty
     if mandatory_total_weight > 0:
         mandatory_avg = mandatory_weighted_score / mandatory_total_weight
-        
-        # Apply penalty ONLY to mandatory portion if avg < 5.0
         if mandatory_scores:
             avg_mandatory_raw = sum(mandatory_scores) / len(mandatory_scores)
             if avg_mandatory_raw < 5.0:
                 mandatory_avg *= mandatory_cap_weight
     else:
         mandatory_avg = 0.0
-    
-    # Calculate optional average (no penalty)
+
+    # Optional average (no penalty)
     if optional_total_weight > 0:
         optional_avg = optional_weighted_score / optional_total_weight
     else:
         optional_avg = 0.0
-    
-    # Combine weighted averages
+
+    # Combine
     total_weight = mandatory_total_weight + optional_total_weight
     if total_weight == 0:
         return 0.0
-    
-    final_score = (mandatory_avg * mandatory_total_weight + optional_avg * optional_total_weight) / total_weight
-    
+
+    return (mandatory_avg * mandatory_total_weight + optional_avg * optional_total_weight) / total_weight
+
+
+def _compute_final_score(
+    questions: List[ScoredQuestion],
+    mandatory_weight: float,
+    optional_weight: float,
+    mandatory_cap_weight: float,
+    category_weights: Optional[Dict[str, float]] = None,
+) -> float:
+    """
+    Compute final score with optional per-category weighting.
+
+    If category_weights is None, falls back to equal weighting (legacy behavior).
+    If provided, groups questions by category, computes per-category scores,
+    then combines using the category weight percentages.
+
+    Dynamic normalization: if a category has 0 questions, its weight is
+    redistributed proportionally to non-empty categories.
+    """
+    if not questions:
+        return 0.0
+
+    # Legacy flat mode: no per-category weights
+    if category_weights is None:
+        score = _compute_category_score(
+            questions, mandatory_weight, optional_weight, mandatory_cap_weight
+        )
+        return round(score, 2)
+
+    # Group questions by category
+    category_groups: Dict[str, List[ScoredQuestion]] = {}
+    for q in questions:
+        cat = q.category
+        if cat not in category_groups:
+            category_groups[cat] = []
+        category_groups[cat].append(q)
+
+    # Dynamic normalization: only include categories with questions
+    active_weights = {
+        cat: w for cat, w in category_weights.items()
+        if len(category_groups.get(cat, [])) > 0
+    }
+
+    if not active_weights:
+        return 0.0
+
+    total_active = sum(active_weights.values())
+    if total_active == 0:
+        return 0.0
+
+    # Compute per-category scores and weighted combination
+    final_score = 0.0
+    for cat, weight in active_weights.items():
+        normalized_weight = weight / total_active  # proportional share
+        cat_score = _compute_category_score(
+            category_groups[cat],
+            mandatory_weight,
+            optional_weight,
+            mandatory_cap_weight,
+        )
+        final_score += cat_score * normalized_weight
+
     return round(final_score, 2)
+
+
+def recalculate_score(analysis_questions: List[Dict], config: Dict) -> float:
+    """
+    Pure math recalculation from stored question-level scores.
+    No LLM needed — re-applies weights with dynamic normalization.
+
+    Args:
+        analysis_questions: list of question dicts from stored analysis JSON
+        config: dict with keys: education_weight, experience_weight, technical_weight,
+                soft_skills_weight, mandatory_question_weight, optional_question_weight,
+                mandatory_cap_weight
+    Returns:
+        Recalculated average score (0-10)
+    """
+    if not analysis_questions:
+        return 0.0
+
+    # Convert stored dicts back to ScoredQuestion objects
+    scored_questions = []
+    for q in analysis_questions:
+        scored_questions.append(ScoredQuestion(
+            category=q.get("category", "unknown"),
+            question=q.get("question", ""),
+            is_mandatory=q.get("is_mandatory", False),
+            answer=q.get("answer", ""),
+            score=q.get("score", 0.0),
+            reasoning=q.get("reasoning", ""),
+            evidence_chars=q.get("evidence_chars", 0),
+            retrieved_chunks=[],  # Not needed for score calculation
+        ))
+
+    category_weights = {
+        "education": config.get("education_weight", 25),
+        "experience": config.get("experience_weight", 25),
+        "technical_skills": config.get("technical_weight", 25),
+        "soft_skills": config.get("soft_skills_weight", 25),
+    }
+
+    return _compute_final_score(
+        scored_questions,
+        config.get("mandatory_question_weight", 2.0),
+        config.get("optional_question_weight", 1.0),
+        config.get("mandatory_cap_weight", 0.5),
+        category_weights,
+    )
 
 
 def _generate_action_plan(scored_questions: List[ScoredQuestion]) -> Optional[ActionPlan]:

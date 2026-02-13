@@ -115,6 +115,7 @@ export interface JobDescription {
   filename?: string;
   created: string;
   tags?: string[];
+  scoring_config?: string; // config ID — nullable relation
 }
 
 export interface JDFilter {
@@ -182,7 +183,7 @@ export interface ScoringRecord {
   resume_id: string;
   jd_id: string;
   score: number;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'recalculating';
   created: string;
   expand?: {
     resume?: Resume;
@@ -277,4 +278,74 @@ export const jdTagsApi = {
         const response = await api.get<JDTag[]>('/api/jd/tags');
         return response.data;
     }
+};
+
+// ─────────────────────────────────────────────────────────────
+// Scoring Configs
+// ─────────────────────────────────────────────────────────────
+
+export interface ScoringConfig {
+  id: string;
+  name: string;
+  education_weight: number;
+  experience_weight: number;
+  technical_weight: number;
+  soft_skills_weight: number;
+  mandatory_question_weight: number;
+  optional_question_weight: number;
+  mandatory_cap_weight: number;
+  is_default: boolean;
+  created: string;
+  updated: string;
+  usage_count?: number;
+  used_by_jds?: { id: string; role_name: string; company_name: string }[];
+}
+
+export interface ScoringConfigInput {
+  name: string;
+  education_weight: number;
+  experience_weight: number;
+  technical_weight: number;
+  soft_skills_weight: number;
+  mandatory_question_weight?: number;
+  optional_question_weight?: number;
+  mandatory_cap_weight?: number;
+  is_default?: boolean;
+}
+
+export const scoringConfigApi = {
+  getAll: async () => {
+    const response = await api.get<ScoringConfig[]>('/api/scoring-configs');
+    return response.data;
+  },
+
+  get: async (id: string) => {
+    const response = await api.get<ScoringConfig>(`/api/scoring-configs/${id}`);
+    return response.data;
+  },
+
+  create: async (data: ScoringConfigInput) => {
+    const response = await api.post<ScoringConfig>('/api/scoring-configs', data);
+    return response.data;
+  },
+
+  update: async (id: string, data: Partial<ScoringConfigInput>) => {
+    const response = await api.patch<ScoringConfig>(`/api/scoring-configs/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id: string) => {
+    const response = await api.delete(`/api/scoring-configs/${id}`);
+    return response.data;
+  },
+
+  assignToJd: async (configId: string, jdId: string) => {
+    const response = await api.post(`/api/scoring-configs/${configId}/assign/${jdId}`);
+    return response.data as { status: string; affected_count: number };
+  },
+
+  recalculateJd: async (jdId: string) => {
+    const response = await api.post(`/api/scoring-configs/recalculate/${jdId}`);
+    return response.data as { status: string; affected_count: number };
+  },
 };

@@ -495,7 +495,11 @@ class PocketBaseService:
         """
         Check if required collections exist, if not create them.
         """
-        from app.service.pb_collections import get_resumes_schema, get_jds_schema, get_scoring_results_schema, get_resume_tags_schema, get_jd_tags_schema
+        from app.service.pb_collections import (
+            get_resumes_schema, get_jds_schema, get_scoring_results_schema,
+            get_resume_tags_schema, get_jd_tags_schema,
+            get_scoring_configs_schema, get_score_config_history_schema
+        )
         
         headers = {"Authorization": f"Bearer {admin_token}"}
         
@@ -563,11 +567,25 @@ class PocketBaseService:
             except Exception as e:
                 logger.error(f"Error creating jd_tags: {e}")
 
+        # 3.5 Scoring Configs (Dependency for JDs — optional relation)
+        if "scoring_configs" not in existing_names:
+            logger.info("🛠 Creating 'scoring_configs' collection...")
+            schema = get_scoring_configs_schema(users_col_id)
+            try:
+                r = await self.client.post("/api/collections", headers=headers, json=schema)
+                if r.is_success:
+                    existing_names["scoring_configs"] = r.json()["id"]
+                else:
+                    logger.error(f"Failed to create scoring_configs: {r.text}")
+            except Exception as e:
+                logger.error(f"Error creating scoring_configs: {e}")
+
         # 4. JDs
+        scoring_configs_id = existing_names.get("scoring_configs", "")
         if "job_descriptions" not in existing_names:
             if "jd_tags" in existing_names:
                 logger.info("🛠 Creating 'job_descriptions' collection...")
-                schema = get_jds_schema(users_col_id, existing_names["jd_tags"])
+                schema = get_jds_schema(users_col_id, existing_names["jd_tags"], scoring_configs_id)
                 try:
                     r = await self.client.post("/api/collections", headers=headers, json=schema)
                     if r.is_success:
@@ -581,24 +599,60 @@ class PocketBaseService:
         else:
             # Check if schema needs update to include tags/metadata
             await self._migrate_job_descriptions_schema(headers, existing_names["job_descriptions"], users_col_id, existing_names.get("jd_tags"))
+            # Migrate: add scoring_config field if missing
+            if scoring_configs_id:
+                await self._migrate_add_field_if_missing(
+                    headers, existing_names["job_descriptions"], "job_descriptions",
+                    {
+                        "name": "scoring_config",
+                        "type": "relation",
+                        "required": False,
+                        "collectionId": scoring_configs_id,
+                        "cascadeDelete": False,
+                        "maxSelect": 1,
+                    }
+                )
 
 
-        # 4. Scoring Results (needs IDs)
+        # 5. Scoring Results (needs IDs)
         if "scoring_results" not in existing_names:
             if "resumes" in existing_names and "job_descriptions" in existing_names:
                 logger.info("🛠 Creating 'scoring_results' collection...")
                 schema = get_scoring_results_schema(existing_names["resumes"], existing_names["job_descriptions"], users_col_id)
                 try:
                     r = await self.client.post("/api/collections", headers=headers, json=schema)
-                    if not r.is_success:
+                    if r.is_success:
+                        existing_names["scoring_results"] = r.json()["id"]
+                    else:
                         logger.error(f"Failed to create scoring_results: {r.text}")
                 except Exception as e:
                     logger.error(f"Error creating scoring_results: {e}")
             else:
                 logger.warning("Skipping 'scoring_results' creation because dependencies missing.")
+        else:
+            # Migrate: add 'recalculating' to status select values if missing
+            await self._migrate_scoring_results_status(headers, existing_names["scoring_results"])
+
+        # 6. Score Config History (needs scoring_results + scoring_configs)
+        if "score_config_history" not in existing_names:
+            sr_id = existing_names.get("scoring_results", "")
+            sc_id = existing_names.get("scoring_configs", "")
+            if sr_id and sc_id:
+                logger.info("🛠 Creating 'score_config_history' collection...")
+                schema = get_score_config_history_schema(sr_id, sc_id)
+                try:
+                    r = await self.client.post("/api/collections", headers=headers, json=schema)
+                    if r.is_success:
+                        existing_names["score_config_history"] = r.json()["id"]
+                    else:
+                        logger.error(f"Failed to create score_config_history: {r.text}")
+                except Exception as e:
+                    logger.error(f"Error creating score_config_history: {e}")
+            else:
+                logger.warning("Skipping 'score_config_history' creation because dependencies missing.")
 
                 
-        logger.info("✅ Encured collections exist.")
+        logger.info("✅ Ensured collections exist.")
 
     async def _migrate_job_descriptions_schema(self, headers: Dict, collection_id: str, users_col_id: str, jd_tags_id: Optional[str]):
         """Helper to add missing fields to job_descriptions if they don't exist."""
@@ -652,6 +706,211 @@ class PocketBaseService:
 
         except Exception as e:
             logger.error(f"Migration failed: {e}")
+    async def _migrate_add_field_if_missing(
+        self, headers: Dict, collection_id: str, collection_name: str, field_def: Dict
+    ):
+        """Generic helper: add a single field to a collection if it doesn't already exist."""
+        try:
+            r = await self.client.get(f"/api/collections/{collection_id}", headers=headers)
+            if not r.is_success:
+                return
+            col_data = r.json()
+            remote_fields = col_data.get("fields", col_data.get("schema", []))
+            current_field_names = {f["name"] for f in remote_fields}
+            
+            if field_def["name"] not in current_field_names:
+                logger.info(f"🛠 Migrating '{collection_name}': Adding field '{field_def['name']}'...")
+                new_fields = list(remote_fields) + [field_def]
+                key = "fields" if "fields" in col_data else "schema"
+                r_update = await self.client.patch(
+                    f"/api/collections/{collection_id}", headers=headers, json={key: new_fields}
+                )
+                if r_update.is_success:
+                    logger.info(f"✅ '{collection_name}' field '{field_def['name']}' added.")
+                else:
+                    logger.error(f"Failed to add field: {r_update.text}")
+        except Exception as e:
+            logger.error(f"Migration failed for {collection_name}.{field_def['name']}: {e}")
+
+    async def _migrate_scoring_results_status(self, headers: Dict, collection_id: str):
+        """Add 'recalculating' to the status select field if missing."""
+        try:
+            r = await self.client.get(f"/api/collections/{collection_id}", headers=headers)
+            if not r.is_success:
+                return
+            col_data = r.json()
+            remote_fields = col_data.get("fields", col_data.get("schema", []))
+            
+            for field in remote_fields:
+                if field["name"] == "status" and field["type"] == "select":
+                    values = field.get("values", [])
+                    if "recalculating" not in values:
+                        logger.info("🛠 Migrating 'scoring_results': Adding 'recalculating' status...")
+                        field["values"] = values + ["recalculating"]
+                        key = "fields" if "fields" in col_data else "schema"
+                        r_update = await self.client.patch(
+                            f"/api/collections/{collection_id}", headers=headers,
+                            json={key: remote_fields}
+                        )
+                        if r_update.is_success:
+                            logger.info("✅ 'scoring_results' status field updated.")
+                        else:
+                            logger.error(f"Failed to update status field: {r_update.text}")
+                    break
+        except Exception as e:
+            logger.error(f"Status migration failed: {e}")
+
+    # =========================================================================
+    # Scoring Configs
+    # =========================================================================
+
+    async def create_scoring_config(self, token: str, user_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {"user": user_id, **data}
+        resp = await self.client.post(
+            "/api/collections/scoring_configs/records",
+            headers=headers,
+            json=payload
+        )
+        self._handle_error(resp, "create_scoring_config")
+        return resp.json()
+
+    async def list_scoring_configs(self, token: str, user_id: str) -> List[Dict[str, Any]]:
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = await self.client.get(
+            "/api/collections/scoring_configs/records",
+            headers=headers,
+            params={"filter": f'user="{user_id}"', "sort": "-created", "perPage": 200}
+        )
+        self._handle_error(resp, "list_scoring_configs")
+        return resp.json().get("items", [])
+
+    async def get_scoring_config(self, token: str, config_id: str) -> Dict[str, Any]:
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = await self.client.get(
+            f"/api/collections/scoring_configs/records/{config_id}",
+            headers=headers
+        )
+        self._handle_error(resp, "get_scoring_config")
+        return resp.json()
+
+    async def update_scoring_config(self, token: str, config_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = await self.client.patch(
+            f"/api/collections/scoring_configs/records/{config_id}",
+            headers=headers,
+            json=data
+        )
+        self._handle_error(resp, "update_scoring_config")
+        return resp.json()
+
+    async def delete_scoring_config(self, token: str, config_id: str) -> bool:
+        headers = {"Authorization": f"Bearer {token}"}
+        resp = await self.client.delete(
+            f"/api/collections/scoring_configs/records/{config_id}",
+            headers=headers
+        )
+        self._handle_error(resp, "delete_scoring_config")
+        return True
+
+    async def clear_default_scoring_configs(self, token: str, user_id: str) -> None:
+        """Set is_default=False on all configs for this user (before setting a new default)."""
+        configs = await self.list_scoring_configs(token, user_id)
+        headers = {"Authorization": f"Bearer {token}"}
+        for cfg in configs:
+            if cfg.get("is_default"):
+                await self.client.patch(
+                    f"/api/collections/scoring_configs/records/{cfg['id']}",
+                    headers=headers,
+                    json={"is_default": False}
+                )
+
+    async def get_jds_using_config(self, token: str, user_id: str, config_id: str) -> List[Dict[str, Any]]:
+        """Get all JDs that reference a specific scoring config."""
+        headers = {"Authorization": f"Bearer {token}"}
+        filter_str = f'user="{user_id}" && scoring_config="{config_id}"'
+        resp = await self.client.get(
+            "/api/collections/job_descriptions/records",
+            headers=headers,
+            params={"filter": filter_str, "perPage": 500, "fields": "id,role_name,company_name"}
+        )
+        self._handle_error(resp, "get_jds_using_config")
+        return resp.json().get("items", [])
+
+    async def unlink_config_from_jds(self, token: str, user_id: str, config_id: str) -> int:
+        """Remove config from all JDs that use it. Returns count of affected JDs."""
+        jds = await self.get_jds_using_config(token, user_id, config_id)
+        headers = {"Authorization": f"Bearer {token}"}
+        for jd in jds:
+            await self.client.patch(
+                f"/api/collections/job_descriptions/records/{jd['id']}",
+                headers=headers,
+                json={"scoring_config": ""}
+            )
+        return len(jds)
+
+    # =========================================================================
+    # Score Config History
+    # =========================================================================
+
+    async def create_score_config_history(
+        self, admin_token: str, scoring_result_id: str, config_id: str, config_snapshot: Dict
+    ) -> Dict[str, Any]:
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        payload = {
+            "scoring_result": scoring_result_id,
+            "scoring_config": config_id,
+            "config_snapshot": json.dumps(config_snapshot),
+        }
+        resp = await self.client.post(
+            "/api/collections/score_config_history/records",
+            headers=headers,
+            json=payload
+        )
+        self._handle_error(resp, "create_score_config_history")
+        return resp.json()
+
+    # =========================================================================
+    # Scoring Results — Extended Queries
+    # =========================================================================
+
+    async def get_completed_results_for_jd(
+        self, admin_token: str, jd_id: str
+    ) -> List[Dict[str, Any]]:
+        """Fetch all completed (or recalculating) scoring results for a JD."""
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        filter_str = f'jd="{jd_id}" && (status="completed" || status="recalculating")'
+        resp = await self.client.get(
+            "/api/collections/scoring_results/records",
+            headers=headers,
+            params={"filter": filter_str, "perPage": 500}
+        )
+        self._handle_error(resp, "get_completed_results_for_jd")
+        return resp.json().get("items", [])
+
+    async def update_scoring_result_score(
+        self, admin_token: str, result_id: str, score: float, status: str = "completed"
+    ) -> None:
+        """Update a scoring result's score and status (used during recalculation)."""
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        resp = await self.client.patch(
+            f"/api/collections/scoring_results/records/{result_id}",
+            headers=headers,
+            json={"score": score, "status": status}
+        )
+        self._handle_error(resp, "update_scoring_result_score")
+
+    async def bulk_update_status(
+        self, admin_token: str, result_ids: List[str], status: str
+    ) -> None:
+        """Update status for multiple scoring results (e.g., completed → recalculating)."""
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        for rid in result_ids:
+            await self.client.patch(
+                f"/api/collections/scoring_results/records/{rid}",
+                headers=headers,
+                json={"status": status}
+            )
 
     async def update_job_status(
         self, 
@@ -674,10 +933,6 @@ class PocketBaseService:
             json=payload
         )
         self._handle_error(resp, "update_job_status")
-
-
-
-
 
     async def search_resumes(self, token: str, user_id: str, criteria: Dict[str, Any]) -> List[Dict[str, Any]]:
         headers = {"Authorization": f"Bearer {token}"}

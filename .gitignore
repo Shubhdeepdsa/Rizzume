@@ -19,3 +19,7 @@ pocketbase_*/
 
 # Logs
 *.log
+
+# Next.js
+.next/
+rizzume-web-app/package-lock.json
