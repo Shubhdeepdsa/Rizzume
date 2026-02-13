@@ -22,7 +22,7 @@ interface ActionPlanCardProps {
 }
 
 export function ActionPlanCard({ plan }: ActionPlanCardProps) {
-    const [isOpen, setIsOpen] = React.useState(true)
+    const [isOpen, setIsOpen] = React.useState(false)
 
     if (!plan) return null
 

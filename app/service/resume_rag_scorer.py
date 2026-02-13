@@ -244,34 +244,58 @@ def _compute_final_score(
     mandatory_cap_weight: float
 ) -> float:
     """
-    Compute weighted average.
+    Compute weighted average with penalty applied ONLY to mandatory questions.
+    
+    This ensures:
+    - Mandatory questions get 2x weight
+    - If mandatory avg < 5.0, penalty applies ONLY to mandatory portion
+    - Optional questions are unaffected by mandatory performance
     """
     if not questions:
         return 0.0
-        
-    total_weighted_score = 0.0
-    total_weight = 0.0
+    
+    # Separate mandatory and optional calculations
+    mandatory_weighted_score = 0.0
+    mandatory_total_weight = 0.0
+    optional_weighted_score = 0.0
+    optional_total_weight = 0.0
     
     mandatory_scores = []
     
     for q in questions:
-        w = mandatory_weight if q.is_mandatory else optional_weight
-        total_weighted_score += q.score * w
-        total_weight += w
-        
         if q.is_mandatory:
+            mandatory_weighted_score += q.score * mandatory_weight
+            mandatory_total_weight += mandatory_weight
             mandatory_scores.append(q.score)
-            
+        else:
+            optional_weighted_score += q.score * optional_weight
+            optional_total_weight += optional_weight
+    
+    # Calculate mandatory average
+    if mandatory_total_weight > 0:
+        mandatory_avg = mandatory_weighted_score / mandatory_total_weight
+        
+        # Apply penalty ONLY to mandatory portion if avg < 5.0
+        if mandatory_scores:
+            avg_mandatory_raw = sum(mandatory_scores) / len(mandatory_scores)
+            if avg_mandatory_raw < 5.0:
+                mandatory_avg *= mandatory_cap_weight
+    else:
+        mandatory_avg = 0.0
+    
+    # Calculate optional average (no penalty)
+    if optional_total_weight > 0:
+        optional_avg = optional_weighted_score / optional_total_weight
+    else:
+        optional_avg = 0.0
+    
+    # Combine weighted averages
+    total_weight = mandatory_total_weight + optional_total_weight
     if total_weight == 0:
         return 0.0
-        
-    final_score = total_weighted_score / total_weight
     
-    if mandatory_scores:
-        avg_mandatory = sum(mandatory_scores) / len(mandatory_scores)
-        if avg_mandatory < 5.0:
-            final_score *= mandatory_cap_weight
-            
+    final_score = (mandatory_avg * mandatory_total_weight + optional_avg * optional_total_weight) / total_weight
+    
     return round(final_score, 2)
 
 
