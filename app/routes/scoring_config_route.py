@@ -250,8 +250,13 @@ async def _recalculate_results(
             # Recalculate using pure math
             new_score = recalculate_score(questions, config)
 
-            # Update the result
-            await pb.update_scoring_result_score(token, result["id"], new_score, "completed")
+            # Update average_score inside the analysis blob
+            analysis["average_score"] = new_score
+
+            # Update the result (score + analysis blob)
+            await pb.update_scoring_result_score(
+                token, result["id"], new_score, "completed", analysis=analysis
+            )
 
             # Record config history
             if config_id:

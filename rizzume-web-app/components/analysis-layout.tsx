@@ -2,18 +2,28 @@
 
 import { useState, useMemo } from "react"
 import type { ScoreResult } from "@/lib/api"
+import type { ScoringConfig } from "@/lib/api-client"
 import { QuestionFilters } from "./question-filters"
 import { QuestionCard } from "./question-card"
 import { QuestionDetailPanel } from "./question-detail-panel"
 import { ActionPlanCard } from "./dashboard/scoring/action-plan-card"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts"
+import {
+  Tooltip as TooltipUI,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { Badge } from "@/components/ui/badge"
+import { Settings2, Info } from "lucide-react"
 
 interface AnalysisLayoutProps {
   result: ScoreResult
   resumeText?: string
+  scoringConfig?: ScoringConfig | null
 }
 
-export function AnalysisLayout({ result, resumeText }: AnalysisLayoutProps) {
+export function AnalysisLayout({ result, resumeText, scoringConfig }: AnalysisLayoutProps) {
   const [selectedFilter, setSelectedFilter] = useState("all")
   const [selectedQuestionId, setSelectedQuestionId] = useState(0)
 
@@ -41,14 +51,14 @@ export function AnalysisLayout({ result, resumeText }: AnalysisLayoutProps) {
   }, [result.questions, selectedFilter])
 
   const chartData = useMemo(() => {
-    const categoryNames = {
-      education: "Education",
-      experience: "Experience",
-      technical_skills: "Technical Skills",
-      soft_skills: "Soft Skills",
-    }
+    const categoryDefs = [
+      { key: "education", displayName: "Education", weightKey: "education_weight" as const, color: "hsl(210, 70%, 55%)" },
+      { key: "experience", displayName: "Experience", weightKey: "experience_weight" as const, color: "hsl(150, 60%, 45%)" },
+      { key: "technical_skills", displayName: "Technical Skills", weightKey: "technical_weight" as const, color: "hsl(280, 60%, 55%)" },
+      { key: "soft_skills", displayName: "Soft Skills", weightKey: "soft_skills_weight" as const, color: "hsl(30, 80%, 55%)" },
+    ]
 
-    return Object.entries(categoryNames).map(([key, displayName]) => {
+    return categoryDefs.map(({ key, displayName, weightKey, color }) => {
       const categoryQuestions = result.questions.filter((q) => q.category === key)
       const mandatoryQuestions = categoryQuestions.filter((q) => q.is_mandatory)
 
@@ -60,15 +70,19 @@ export function AnalysisLayout({ result, resumeText }: AnalysisLayoutProps) {
         ? mandatoryQuestions.reduce((sum, q) => sum + q.score, 0) / mandatoryQuestions.length
         : 0
 
+      const weight = scoringConfig ? (scoringConfig as any)[weightKey] ?? 25 : 25
+
       return {
         category: displayName,
         overallScore: Math.round(overallScore * 10) / 10,
         mandatoryScore: Math.round(mandatoryScore * 10) / 10,
         questionCount: categoryQuestions.length,
         mandatoryCount: mandatoryQuestions.length,
+        weight,
+        color,
       }
     }).filter(item => item.questionCount > 0) // Only show categories with questions
-  }, [result.questions])
+  }, [result.questions, scoringConfig])
 
   const mandatoryInsights = useMemo(() => {
     const allMandatory = result.questions.filter((q) => q.is_mandatory)
@@ -110,6 +124,12 @@ export function AnalysisLayout({ result, resumeText }: AnalysisLayoutProps) {
                       <div className="w-3 h-3 rounded bg-amber-500"></div>
                       <span className="text-muted-foreground">Mandatory Score</span>
                     </div>
+                    {scoringConfig && (
+                      <div className="flex items-center gap-2">
+                        <Settings2 className="w-3 h-3 text-muted-foreground" />
+                        <span className="text-muted-foreground">{scoringConfig.name}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="h-64">
@@ -131,27 +151,104 @@ export function AnalysisLayout({ result, resumeText }: AnalysisLayoutProps) {
                           border: "1px solid var(--color-border)",
                           borderRadius: "8px",
                         }}
-                        formatter={(value: number, name: string) => {
+                        formatter={(value: number, name: string, props: any) => {
                           const displayName = name === 'overallScore' ? 'Overall' : 'Mandatory'
-                          return [`${value} / 10`, displayName]
+                          const weight = props.payload?.weight
+                          const weightLabel = scoringConfig ? ` (Weight: ${weight}%)` : ''
+                          return [`${value} / 10${weightLabel}`, displayName]
                         }}
                         labelFormatter={(label) => `${label}`}
                       />
-                      <Bar dataKey="overallScore" fill="var(--color-primary)" radius={[8, 8, 0, 0]} />
+                      <Bar dataKey="overallScore" fill="var(--color-primary)" radius={[8, 8, 0, 0]}>
+                        {chartData.map((entry, index) => (
+                          <Cell key={`cell-overall-${index}`} fill={entry.color} />
+                        ))}
+                      </Bar>
                       <Bar dataKey="mandatoryScore" fill="rgb(245, 158, 11)" radius={[8, 8, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Showing {chartData.length} categories with {result.questions.length} total criteria
-                </p>
+                {scoringConfig ? (
+                  <div className="flex items-center gap-4 mt-2">
+                    <div className="w-16 h-16 flex-shrink-0">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={chartData.map(d => ({ name: d.category, value: d.weight, color: d.color }))}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={16}
+                            outerRadius={28}
+                            paddingAngle={3}
+                            dataKey="value"
+                            strokeWidth={0}
+                          >
+                            {chartData.map((entry, index) => (
+                              <Cell key={`pie-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                      {chartData.map((d, i) => (
+                        <div key={i} className="flex items-center gap-1.5 text-xs">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
+                          <span className="text-muted-foreground">{d.category}</span>
+                          <span className="font-semibold text-foreground">{d.weight}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Showing {chartData.length} categories with {result.questions.length} total criteria
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="space-y-4">
               {/* Overall Score Card */}
               <div className="bg-card border border-border/50 rounded-lg p-6 flex flex-col justify-center">
-                <p className="text-sm text-muted-foreground mb-2">Overall Score</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground mb-2">Overall Score</p>
+                  {scoringConfig && (
+                    <TooltipProvider>
+                      <TooltipUI>
+                        <TooltipTrigger>
+                          <Badge variant="outline" className="gap-1 text-xs cursor-help">
+                            <Settings2 className="h-3 w-3" />
+                            {scoringConfig.name}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent side="left" className="max-w-xs bg-background border-2">
+                          <div className="space-y-2 text-xs">
+                            <p className="font-semibold text-foreground">Scoring Configuration</p>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-foreground">
+                              <span className="text-muted-foreground">Education</span>
+                              <span className="font-mono">{scoringConfig.education_weight}%</span>
+                              <span className="text-muted-foreground">Experience</span>
+                              <span className="font-mono">{scoringConfig.experience_weight}%</span>
+                              <span className="text-muted-foreground">Technical</span>
+                              <span className="font-mono">{scoringConfig.technical_weight}%</span>
+                              <span className="text-muted-foreground">Soft Skills</span>
+                              <span className="font-mono">{scoringConfig.soft_skills_weight}%</span>
+                            </div>
+                            <div className="border-t border-border pt-1 mt-1 grid grid-cols-2 text-foreground gap-x-4 gap-y-1">
+                              <span className="text-muted-foreground">Mandatory Wt</span>
+                              <span className="font-mono">{scoringConfig.mandatory_question_weight}×</span>
+                              <span className="text-muted-foreground">Optional Wt</span>
+                              <span className="font-mono">{scoringConfig.optional_question_weight}×</span>
+                              <span className="text-muted-foreground">Cap Penalty</span>
+                              <span className="font-mono">{(scoringConfig.mandatory_cap_weight * 100).toFixed(0)}%</span>
+                            </div>
+                          </div>
+                        </TooltipContent>
+                      </TooltipUI>
+                    </TooltipProvider>
+                  )}
+                </div>
                 <p className="text-5xl font-bold text-primary">{result.average_score.toFixed(1)}</p>
                 <p className="text-xs text-muted-foreground mt-2">out of 10</p>
               </div>

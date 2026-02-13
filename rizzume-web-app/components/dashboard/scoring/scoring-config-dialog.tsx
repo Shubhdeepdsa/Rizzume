@@ -252,7 +252,7 @@ export function ScoringConfigDialog({
                                         onValueChange={([v]) => handleWeightChange(key, v)}
                                         min={0}
                                         max={100}
-                                        step={1}
+                                        step={5}
                                         className="**:data-[slot=slider-range]:transition-all"
                                     />
                                 </div>

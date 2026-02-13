@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react"
 import { useParams } from "next/navigation"
-import { scoringApi, ScoringRecord } from "@/lib/api-client"
+import { scoringApi, ScoringRecord, scoringConfigApi, ScoringConfig } from "@/lib/api-client"
 import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
@@ -12,6 +12,7 @@ import type { ScoreResult } from "@/lib/api"
 export default function ScoreDetailPage() {
     const { id } = useParams()
     const [record, setRecord] = useState<ScoringRecord | null>(null)
+    const [scoringConfig, setScoringConfig] = useState<ScoringConfig | null>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const fetchedRef = useRef(false) // Guard for double fetch
@@ -29,6 +30,17 @@ export default function ScoreDetailPage() {
             const data = await scoringApi.getDetail(recordId)
             console.log("DEBUG: Raw API Data:", data)
             setRecord(data)
+
+            // Fetch scoring config if JD has one assigned
+            const configId = data.expand?.jd?.scoring_config
+            if (configId) {
+                try {
+                    const cfg = await scoringConfigApi.get(configId)
+                    setScoringConfig(cfg)
+                } catch (e) {
+                    console.warn("Could not fetch scoring config", e)
+                }
+            }
         } catch (e) {
             console.error(e)
             setError("Failed to load details.")
@@ -83,12 +95,17 @@ export default function ScoreDetailPage() {
     }
 
     const result = normalizeResult(record.analysis || record.result)
+    // Prefer the top-level record.score — it's always up-to-date after recalculation
+    if (typeof record.score === 'number' && record.score > 0) {
+        result.average_score = record.score
+    }
     console.log("DEBUG: Final result prop passed to AnalysisLayout:", result)
 
     return (
         <AnalysisLayout
             result={result}
             resumeText={record.expand?.resume?.original_text}
+            scoringConfig={scoringConfig}
         />
     )
 }

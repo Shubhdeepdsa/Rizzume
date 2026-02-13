@@ -889,14 +889,18 @@ class PocketBaseService:
         return resp.json().get("items", [])
 
     async def update_scoring_result_score(
-        self, admin_token: str, result_id: str, score: float, status: str = "completed"
+        self, admin_token: str, result_id: str, score: float, status: str = "completed",
+        analysis: Dict[str, Any] | None = None,
     ) -> None:
-        """Update a scoring result's score and status (used during recalculation)."""
+        """Update a scoring result's score, status, and optionally analysis (used during recalculation)."""
         headers = {"Authorization": f"Bearer {admin_token}"}
+        payload: Dict[str, Any] = {"score": score, "status": status}
+        if analysis is not None:
+            payload["analysis"] = analysis
         resp = await self.client.patch(
             f"/api/collections/scoring_results/records/{result_id}",
             headers=headers,
-            json={"score": score, "status": status}
+            json=payload,
         )
         self._handle_error(resp, "update_scoring_result_score")
 
