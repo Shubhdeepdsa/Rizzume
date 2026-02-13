@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { SelectionPanel } from "@/components/dashboard/scoring/selection-panel"
 import { Button } from "@/components/ui/button"
-import { Loader2, Zap, Info } from "lucide-react"
+import { Loader2, Zap, Info, AlertTriangle, TrendingDown } from "lucide-react"
 import { scoringApi, BatchTokenEstimateResponse } from "@/lib/api-client"
 import { useToast } from "@/components/ui/use-toast"
 import {
@@ -13,6 +13,9 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { Badge } from "@/components/ui/badge"
+
+type Strategy = "rag" | "full"
 
 export default function ScorePage() {
     const router = useRouter()
@@ -21,6 +24,9 @@ export default function ScorePage() {
     const [selectedResumeIds, setSelectedResumeIds] = useState<string[]>([])
     const [selectedJdIds, setSelectedJdIds] = useState<string[]>([])
     const [isScoring, setIsScoring] = useState(false)
+
+    // Strategy toggle
+    const [strategy, setStrategy] = useState<Strategy>("rag")
 
     // Estimate state
     const [estimate, setEstimate] = useState<{ details: BatchTokenEstimateResponse, loading: boolean } | null>(null)
@@ -34,7 +40,18 @@ export default function ScorePage() {
             }
 
             try {
-                setEstimate(prev => prev ? { ...prev, loading: true } : { details: { total_tokens: 0, resume_count: 0, jd_count: 0, resume_tokens_sum: 0, jd_tokens_sum: 0, overhead_tokens: 0 }, loading: true })
+                setEstimate(prev => prev
+                    ? { ...prev, loading: true }
+                    : {
+                        details: {
+                            resume_count: 0, jd_count: 0, total_combinations: 0, total_questions: 0,
+                            rag_strategy: { name: "RAG (Chunks)", total_tokens: 0, tokens_per_question: 0, context_tokens: 0, context_type: "" },
+                            full_resume_strategy: { name: "Full Resume", total_tokens: 0, tokens_per_question: 0, context_tokens: 0, context_type: "" },
+                            savings_tokens: 0, savings_percentage: 0, warnings: []
+                        },
+                        loading: true
+                    }
+                )
                 const res = await scoringApi.estimateBatch(selectedResumeIds, selectedJdIds)
                 setEstimate({ details: res, loading: false })
             } catch (error) {
@@ -81,6 +98,12 @@ export default function ScorePage() {
         }
     }
 
+    const activeStrategy = estimate?.details
+        ? (strategy === "rag" ? estimate.details.rag_strategy : estimate.details.full_resume_strategy)
+        : null
+
+    const hasWarnings = (estimate?.details?.warnings?.length ?? 0) > 0
+
     return (
         <div className="flex flex-col h-[calc(100vh-6rem)] gap-4">
             <div className="flex items-center justify-between">
@@ -91,56 +114,139 @@ export default function ScorePage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-4">
-                    <div className="flex flex-col items-end mr-2">
+                    <div className="flex flex-col items-end mr-2 gap-1">
                         <div className="text-sm text-muted-foreground hidden md:block">
                             {selectedResumeIds.length} Resumes x {selectedJdIds.length} JDs = {selectedResumeIds.length * selectedJdIds.length} Combinations
                         </div>
                         {selectedResumeIds.length > 0 && selectedJdIds.length > 0 && (
-                            <div className="text-xs font-medium text-blue-600 flex items-center gap-1">
-                                {estimate?.loading ? (
-                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                ) : (
-                                    <>
-                                        <span>~{estimate?.details?.total_tokens.toLocaleString()} Tokens</span>
-                                        <TooltipProvider delayDuration={0}>
-                                            <Tooltip>
-                                                <TooltipTrigger>
-                                                    <Info className="h-3 w-3 text-muted-foreground cursor-help" />
-                                                </TooltipTrigger>
-                                                <TooltipContent align="end" className="w-[300px] p-4 text-xs">
-                                                    <div className="space-y-2">
-                                                        <h4 className="font-semibold border-b pb-1 mb-2">Token Estimation Breakdown</h4>
+                            <div className="flex items-center gap-2">
+                                {/* Strategy Toggle */}
+                                <div className="flex items-center bg-muted rounded-lg p-0.5 text-xs">
+                                    <button
+                                        onClick={() => setStrategy("rag")}
+                                        className={`px-2 py-1 rounded-md transition-all font-medium ${strategy === "rag"
+                                            ? "bg-background shadow-sm text-green-600"
+                                            : "text-muted-foreground hover:text-foreground"
+                                            }`}
+                                    >
+                                        RAG
+                                    </button>
+                                    <button
+                                        onClick={() => setStrategy("full")}
+                                        className={`px-2 py-1 rounded-md transition-all font-medium ${strategy === "full"
+                                            ? "bg-background shadow-sm text-orange-600"
+                                            : "text-muted-foreground hover:text-foreground"
+                                            }`}
+                                    >
+                                        Full Resume
+                                    </button>
+                                </div>
 
-                                                        <div className="flex justify-between">
-                                                            <span>Resume Content:</span>
-                                                            <span className="font-mono text-muted-foreground">
-                                                                {estimate?.details?.resume_tokens_sum.toLocaleString()} Tok × {estimate?.details?.jd_count} JDs
-                                                            </span>
+                                {/* Token Count Display */}
+                                <div className="text-xs font-medium flex items-center gap-1">
+                                    {estimate?.loading ? (
+                                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                    ) : (
+                                        <>
+                                            <span className={strategy === "rag" ? "text-green-600" : "text-orange-600"}>
+                                                ~{activeStrategy?.total_tokens.toLocaleString()} Tokens
+                                            </span>
+
+                                            {/* Savings Badge (only shown for RAG) */}
+                                            {strategy === "rag" && estimate?.details && estimate.details.savings_percentage > 0 && (
+                                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-green-500/30 text-green-600 bg-green-50 dark:bg-green-950/20">
+                                                    <TrendingDown className="h-2.5 w-2.5 mr-0.5" />
+                                                    {estimate.details.savings_percentage}% saved
+                                                </Badge>
+                                            )}
+
+                                            {/* Warnings Icon */}
+                                            {hasWarnings && (
+                                                <TooltipProvider delayDuration={0}>
+                                                    <Tooltip>
+                                                        <TooltipTrigger>
+                                                            <AlertTriangle className="h-3.5 w-3.5 text-amber-500 cursor-help" />
+                                                        </TooltipTrigger>
+                                                        <TooltipContent align="end" className="w-[280px] p-3 text-xs">
+                                                            <h4 className="font-semibold mb-1">⚠️ Warnings</h4>
+                                                            <ul className="space-y-1 text-muted-foreground">
+                                                                {estimate?.details?.warnings.map((w, i) => (
+                                                                    <li key={i}>• {w}</li>
+                                                                ))}
+                                                            </ul>
+                                                        </TooltipContent>
+                                                    </Tooltip>
+                                                </TooltipProvider>
+                                            )}
+
+                                            {/* Info Breakdown Tooltip */}
+                                            <TooltipProvider delayDuration={0}>
+                                                <Tooltip>
+                                                    <TooltipTrigger>
+                                                        <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                                                    </TooltipTrigger>
+                                                    <TooltipContent align="end" className="w-[340px] p-4 text-xs bg-background border-2">
+                                                        <div className="space-y-3">
+                                                            <h4 className="font-semibold text-primary border-b pb-1">Token Estimation Breakdown</h4>
+
+                                                            {/* Summary */}
+                                                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
+                                                                <span>Total Questions:</span>
+                                                                <span className="font-mono text-right">{estimate?.details?.total_questions}</span>
+                                                                <span>Combinations:</span>
+                                                                <span className="font-mono text-right">{estimate?.details?.total_combinations}</span>
+                                                            </div>
+
+                                                            {/* Strategy Comparison */}
+                                                            <div className="border rounded-md overflow-hidden">
+                                                                <div className="grid grid-cols-3 bg-muted/50 px-2 py-1 font-semibold">
+                                                                    <span></span>
+                                                                    <span className="text-center text-green-600">RAG</span>
+                                                                    <span className="text-center text-orange-600">Full</span>
+                                                                </div>
+                                                                <div className="grid grid-cols-3 px-2 py-1 border-t text-muted-foreground">
+                                                                    <span>Context/Q</span>
+                                                                    <span className="text-center font-mono">{estimate?.details?.rag_strategy.context_tokens}</span>
+                                                                    <span className="text-center font-mono">{estimate?.details?.full_resume_strategy.context_tokens}</span>
+                                                                </div>
+                                                                <div className="grid grid-cols-3 px-2 py-1 border-t text-muted-foreground">
+                                                                    <span>Tokens/Q</span>
+                                                                    <span className="text-center font-mono">{estimate?.details?.rag_strategy.tokens_per_question}</span>
+                                                                    <span className="text-center font-mono">{estimate?.details?.full_resume_strategy.tokens_per_question}</span>
+                                                                </div>
+                                                                <div className="grid grid-cols-3 px-2 py-1 border-t font-semibold">
+                                                                    <span>Total</span>
+                                                                    <span className="text-center font-mono text-green-600">
+                                                                        {estimate?.details?.rag_strategy.total_tokens.toLocaleString()}
+                                                                    </span>
+                                                                    <span className="text-center font-mono text-orange-600">
+                                                                        {estimate?.details?.full_resume_strategy.total_tokens.toLocaleString()}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Savings Summary */}
+                                                            {estimate?.details && estimate.details.savings_tokens > 0 && (
+                                                                <div className="bg-green-50 dark:bg-green-950/20 rounded-md px-2 py-1.5 text-green-700 dark:text-green-400 flex items-center gap-1.5">
+                                                                    <TrendingDown className="h-3.5 w-3.5" />
+                                                                    <span>
+                                                                        RAG saves <strong>{estimate.details.savings_tokens.toLocaleString()}</strong> tokens ({estimate.details.savings_percentage}%)
+                                                                    </span>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Context Type Explanation */}
+                                                            <div className="text-[10px] text-muted-foreground/70 pt-1 border-t">
+                                                                <p><strong>RAG:</strong> {estimate?.details?.rag_strategy.context_type}</p>
+                                                                <p><strong>Full:</strong> {estimate?.details?.full_resume_strategy.context_type}</p>
+                                                            </div>
                                                         </div>
-                                                        <div className="flex justify-between">
-                                                            <span>JD Content:</span>
-                                                            <span className="font-mono text-muted-foreground">
-                                                                {estimate?.details?.jd_tokens_sum.toLocaleString()} Tok × {estimate?.details?.resume_count} Resumes
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex justify-between border-b pb-2">
-                                                            <span>Prompt Overhead:</span>
-                                                            <span className="font-mono text-muted-foreground">
-                                                                +{estimate?.details?.overhead_tokens.toLocaleString()}
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex justify-between font-bold pt-1">
-                                                            <span>Total Estimated:</span>
-                                                            <span className="text-blue-500">
-                                                                {estimate?.details?.total_tokens.toLocaleString()}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </TooltipContent>
-                                            </Tooltip>
-                                        </TooltipProvider>
-                                    </>
-                                )}
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </TooltipProvider>
+                                        </>
+                                    )}
+                                </div>
                             </div>
                         )}
                     </div>

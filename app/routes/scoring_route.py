@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Optional, List
 
@@ -13,6 +14,7 @@ from app.schemas.score_response_schema import (
     ScoreResponse,
     TokenEstimateResponse,
     BatchTokenEstimateResponse,
+    TokenStrategyDetail,
 )
 from app.security import rate_limiter, get_current_user_token, get_current_user
 from app.service.jd_question_generator import generate_jd_questions
@@ -23,15 +25,41 @@ from app.validator.normalize import normalize_score_input
 logger = logging.getLogger(__name__)
 
 
+# ── Token estimation constants ─────────────────────────────────────────────
+# These mirror the actual scoring pipeline parameters
+RAG_CHUNK_MAX_CHARS = 700       # from chunking.py: max_chars=700
+RAG_TOP_K = 3                   # from resume_rag_scorer.py: top_k=3
+SYSTEM_PROMPT_TOKENS = 250      # ~tokens in RAG_QUESTION_SCORING_SYSTEM_PROMPT
+PROMPT_TEMPLATE_OVERHEAD = 50   # category/importance labels, formatting
+AVG_QUESTION_TOKENS = 30        # avg tokens per generated question
+DEFAULT_QUESTIONS_PER_CATEGORY = 5  # fallback when questions not yet generated
+DEFAULT_TOTAL_QUESTIONS = 20    # 4 categories × 5 questions
+
+
+def _count_jd_questions(jd_record: dict) -> int:
+    """Count total questions from a JD's generated_questions field."""
+    raw = jd_record.get("generated_questions") or {}
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return 0
+    if not isinstance(raw, dict):
+        return 0
+    total = 0
+    for cat in ("education", "experience", "technical_skills", "soft_skills"):
+        questions = raw.get(cat, [])
+        if isinstance(questions, list):
+            total += len(questions)
+    return total
+
+
 router = APIRouter(prefix="/api")
 
 
 @router.get("/score/health")
 async def score_root():
     return {"status": "scoring running"}
-
-
-
 
 
 @router.post(
@@ -49,28 +77,21 @@ async def estimate_tokens_endpoint(
     Reads content from PocketBase and calculates accurate token counts using tiktoken.
     """
     try:
-        # Fetch Text
         resume_record = await pb.get_resume(token, payload.resume_id)
         jd_record = await pb.get_jd(token, payload.jd_id)
-        
+
         resume_text = resume_record.get("original_text", "") or ""
         jd_text = jd_record.get("original_text", "") or ""
-        
-        # Estimate
-        jd_tokens = estimate_tokens(jd_text)
-        resume_tokens = estimate_tokens(resume_text)
-        
+
         return TokenEstimateResponse(
             jd_text_length=len(jd_text),
             resume_text_length=len(resume_text),
-            jd_token_estimate=jd_tokens,
-            resume_token_estimate=resume_tokens,
+            jd_token_estimate=estimate_tokens(jd_text),
+            resume_token_estimate=estimate_tokens(resume_text),
         )
     except Exception as e:
         logger.exception("Failed to estimate tokens")
         raise HTTPException(status_code=500, detail=f"Failed to estimate: {e}")
-
-
 
 
 @router.post(
@@ -85,9 +106,12 @@ async def estimate_batch_tokens_endpoint(
 ) -> BatchTokenEstimateResponse:
     """
     Estimate total tokens for all combinations of selected Resumes and JDs.
+    Returns a side-by-side comparison of RAG (chunks) vs Full Resume strategies.
     """
+    warnings: List[str] = []
+
     try:
-        # 1. Fetch all resumes
+        # ── 1. Fetch all resumes ────────────────────────────────────────────
         resumes = []
         for r_id in payload.resume_ids:
             try:
@@ -96,7 +120,7 @@ async def estimate_batch_tokens_endpoint(
             except Exception:
                 logger.warning(f"Failed to fetch resume {r_id} for estimation")
 
-        # 2. Fetch all JDs
+        # ── 2. Fetch all JDs ────────────────────────────────────────────────
         jds = []
         for j_id in payload.jd_ids:
             try:
@@ -105,46 +129,115 @@ async def estimate_batch_tokens_endpoint(
             except Exception:
                 logger.warning(f"Failed to fetch JD {j_id} for estimation")
 
-        if not resumes or not jds:
-            return BatchTokenEstimateResponse(
-                total_tokens=0,
-                resume_count=len(resumes),
-                jd_count=len(jds),
-                resume_tokens_sum=0,
-                jd_tokens_sum=0,
-                overhead_tokens=0
-            )
-
-        # 3. Calculate tokens for each unique item
-        resume_tokens_sum = 0
-        for r in resumes:
-            text = r.get("original_text", "") or ""
-            resume_tokens_sum += estimate_tokens(text)
-
-        jd_tokens_sum = 0
-        for j in jds:
-            text = j.get("original_text", "") or ""
-            jd_tokens_sum += estimate_tokens(text)
-            
-        # 4. Calculate total for combinations
-        # Total = (Sum(ResumeTokens) * Count(JDs)) + (Sum(JDTokens) * Count(Resumes))
-        
         count_resumes = len(resumes)
         count_jds = len(jds)
-        
-        # Add buffer for prompt template overhead (e.g. ~500 tokens per combination)
-        overhead_per_combo = 500
-        total_overhead = count_resumes * count_jds * overhead_per_combo
-        
-        total_tokens = (resume_tokens_sum * count_jds) + (jd_tokens_sum * count_resumes) + total_overhead
+        total_combos = count_resumes * count_jds
+
+        # ── Edge: empty selection ───────────────────────────────────────────
+        if not resumes or not jds:
+            empty_strategy = TokenStrategyDetail(
+                name="RAG (Chunks)", total_tokens=0,
+                tokens_per_question=0, context_tokens=0,
+                context_type="Top-3 Chunks (~2100 chars)"
+            )
+            return BatchTokenEstimateResponse(
+                resume_count=count_resumes, jd_count=count_jds,
+                total_combinations=0, total_questions=0,
+                rag_strategy=empty_strategy,
+                full_resume_strategy=empty_strategy,
+                savings_tokens=0, savings_percentage=0.0,
+                warnings=["No resumes or JDs selected."]
+            )
+
+        # ── 3. Count questions per JD ───────────────────────────────────────
+        questions_per_jd: List[int] = []
+        for jd in jds:
+            q_count = _count_jd_questions(jd)
+            if q_count == 0:
+                q_count = DEFAULT_TOTAL_QUESTIONS
+                warnings.append(
+                    f"JD \"{jd.get('role_name', 'Unknown')}\" has no extracted questions yet. "
+                    f"Using heuristic estimate of {DEFAULT_TOTAL_QUESTIONS} questions."
+                )
+            questions_per_jd.append(q_count)
+
+        # Total questions across all combos:
+        # Each resume is scored against each JD, so total = sum(questions_per_jd) * count_resumes
+        total_questions_all_combos = sum(questions_per_jd) * count_resumes
+        total_questions_display = sum(questions_per_jd)  # unique questions (not × resumes)
+
+        # ── 4. Compute per-resume token counts ──────────────────────────────
+        resume_full_tokens: List[int] = []
+        for r in resumes:
+            text = r.get("original_text", "") or ""
+            tok = estimate_tokens(text)
+            resume_full_tokens.append(tok)
+            if tok == 0:
+                warnings.append(f"Resume \"{r.get('name', 'Unknown')}\" has empty content.")
+
+        avg_resume_tokens = sum(resume_full_tokens) / max(len(resume_full_tokens), 1)
+
+        # ── 5. RAG strategy tokens ──────────────────────────────────────────
+        # Per question: system_prompt + question + top-3 chunks + overhead
+        rag_context_tokens = int(RAG_CHUNK_MAX_CHARS * RAG_TOP_K / 4)  # ~525 tokens
+        rag_per_question = SYSTEM_PROMPT_TOKENS + AVG_QUESTION_TOKENS + rag_context_tokens + PROMPT_TEMPLATE_OVERHEAD
+        rag_total = total_questions_all_combos * rag_per_question
+
+        # ── 6. Full Resume strategy tokens ──────────────────────────────────
+        # Per question: system_prompt + question + full_resume + overhead
+        # For each combo (resume_i, jd_j), the context = resume_i full text
+        full_resume_total = 0
+        for r_idx, r_tokens in enumerate(resume_full_tokens):
+            full_per_question = SYSTEM_PROMPT_TOKENS + AVG_QUESTION_TOKENS + r_tokens + PROMPT_TEMPLATE_OVERHEAD
+            for jd_idx, q_count in enumerate(questions_per_jd):
+                full_resume_total += q_count * full_per_question
+
+        full_per_question_avg = int(
+            SYSTEM_PROMPT_TOKENS + AVG_QUESTION_TOKENS + avg_resume_tokens + PROMPT_TEMPLATE_OVERHEAD
+        )
+
+        # ── 7. Edge: context window overflow warning ────────────────────────
+        for r in resumes:
+            text = r.get("original_text", "") or ""
+            chars = len(text)
+            if chars > 15000:
+                warnings.append(
+                    f"Resume \"{r.get('name', 'Unknown')}\" is very large ({chars} chars). "
+                    "Full Resume strategy may exceed typical context windows."
+                )
+
+        if total_questions_display > 50:
+            warnings.append(
+                f"High question count ({total_questions_display} total). "
+                "This analysis will require many LLM calls."
+            )
+
+        # ── 8. Savings ──────────────────────────────────────────────────────
+        savings_tokens = max(full_resume_total - rag_total, 0)
+        savings_pct = (savings_tokens / full_resume_total * 100) if full_resume_total > 0 else 0.0
 
         return BatchTokenEstimateResponse(
-            total_tokens=total_tokens,
             resume_count=count_resumes,
             jd_count=count_jds,
-            resume_tokens_sum=resume_tokens_sum,
-            jd_tokens_sum=jd_tokens_sum,
-            overhead_tokens=total_overhead
+            total_combinations=total_combos,
+            total_questions=total_questions_display,
+            rag_strategy=TokenStrategyDetail(
+                name="RAG (Chunks)",
+                total_tokens=rag_total,
+                tokens_per_question=rag_per_question,
+                context_tokens=rag_context_tokens,
+                context_type=f"Top-{RAG_TOP_K} Chunks (~{RAG_CHUNK_MAX_CHARS * RAG_TOP_K} chars)",
+            ),
+            full_resume_strategy=TokenStrategyDetail(
+                name="Full Resume",
+                total_tokens=full_resume_total,
+                tokens_per_question=full_per_question_avg,
+                context_tokens=int(avg_resume_tokens),
+                context_type="Full Resume Text",
+            ),
+            savings_tokens=savings_tokens,
+            savings_percentage=round(savings_pct, 1),
+            warnings=warnings,
         )
 
     except Exception as e:

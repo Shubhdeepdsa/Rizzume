@@ -225,13 +225,24 @@ export const scoringApi = {
   }
 };
 
-export interface BatchTokenEstimateResponse {
+export interface TokenStrategyDetail {
+    name: string;
     total_tokens: number;
+    tokens_per_question: number;
+    context_tokens: number;
+    context_type: string;
+}
+
+export interface BatchTokenEstimateResponse {
     resume_count: number;
     jd_count: number;
-    resume_tokens_sum: number;
-    jd_tokens_sum: number;
-    overhead_tokens: number;
+    total_combinations: number;
+    total_questions: number;
+    rag_strategy: TokenStrategyDetail;
+    full_resume_strategy: TokenStrategyDetail;
+    savings_tokens: number;
+    savings_percentage: number;
+    warnings: string[];
 }
 
 
